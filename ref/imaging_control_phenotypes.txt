@@ -1,0 +1,5 @@
+Pheno ID: 0021 (UKB ID: 25021) – Volume of left amygdala
+Pheno ID: 0026 (UKB ID: 25782) – Volume of grey matter in Left Frontal Pole
+Pheno ID: 0434 (UKB ID: 27138) – Volume of V1 in the right hemisphere
+Pheno ID: 0024 (UKB ID: 25024) – Volume of right accumbens
+Pheno ID: 0442 (UKB ID: 27208) – Volume of entorhinal in the left hemisphere (DKT parcellation)

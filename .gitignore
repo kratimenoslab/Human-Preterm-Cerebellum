@@ -1,0 +1,31 @@
+# R artifacts
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Compressed files (large reference data)
+*.gz
+
+# LDSC intermediate outputs (large, regeneratable)
+out_Pattern*/
+out_Feature*/
+
+# Internal tracking files
+ldsc_h2_jobs_incomplete.txt
+
+# Large reference data (see README for download instructions)
+ref/plink_files/
+ref/plink_files_filtered/
+ref/baselineLD_v2.2/
+ref/baselineLD_v2.2_filtered/
+ref/baseline_v1.2/
+ref/weights/
+ref/sumstats_formatted/
+ref/childrens_summarized_gwas/
+ref/childrens_unsummed_gwas/
+ref/gwas_brain/
+
+# Non-CoGAPS analysis data
+data/regression/
+meta/
