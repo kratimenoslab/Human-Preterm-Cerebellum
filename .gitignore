@@ -8,24 +8,24 @@
 *.gz
 
 # LDSC intermediate outputs (large, regeneratable)
-out_Pattern*/
-out_Feature*/
+LDSC/enrichment_analysis/project_cogaps/out_Pattern*/
+LDSC/enrichment_analysis/project_cogaps/out_Feature*/
 
 # Internal tracking files
-ldsc_h2_jobs_incomplete.txt
+LDSC/enrichment_analysis/project_cogaps/ldsc_h2_jobs_incomplete.txt
 
-# Large reference data (see README for download instructions)
-ref/plink_files/
-ref/plink_files_filtered/
-ref/baselineLD_v2.2/
-ref/baselineLD_v2.2_filtered/
-ref/baseline_v1.2/
-ref/weights/
-ref/sumstats_formatted/
-ref/childrens_summarized_gwas/
-ref/childrens_unsummed_gwas/
-ref/gwas_brain/
+# Large reference data (see LDSC/README.md for download instructions)
+LDSC/ref/plink_files/
+LDSC/ref/plink_files_filtered/
+LDSC/ref/baselineLD_v2.2/
+LDSC/ref/baselineLD_v2.2_filtered/
+LDSC/ref/baseline_v1.2/
+LDSC/ref/weights/
+LDSC/ref/sumstats_formatted/
+LDSC/ref/childrens_summarized_gwas/
+LDSC/ref/childrens_unsummed_gwas/
+LDSC/ref/gwas_brain/
 
 # Non-CoGAPS analysis data
-data/regression/
-meta/
+LDSC/data/regression/
+LDSC/meta/
