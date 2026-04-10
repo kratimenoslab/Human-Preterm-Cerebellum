@@ -1,0 +1,5 @@
+V15 model (drop PMA < 45, then just Gestational age)
+    define Preterm as GA < 38
+    subset with data_ptsub <- data[data$Age.at.Death..weeks. > 45, ]
+
+    model <- lmer(log_gene_expression_single ~ (1 | patient) + Gestational.Age..Weeks., data = data_sub)
