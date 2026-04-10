@@ -6,5 +6,7 @@ CoGAPS (Coordinated Gene Activity across Pattern Subsets) analysis code.
 
 cerebellum_cogaps_human.R : Run script for CoGAPS factorization
 
-n30_cogaps_analyzePats.ipynb : Analyze outputs including pattern visualizations and metadata correlations
+n30_cogaps_analyzePats.ipynb : Analyze CoGAPS patterns; pattern visualizations and metadata correlations
+
+n30_cogaps_fGSEA.Rmd : Run GSEA on CoGAPS gene weights
 
