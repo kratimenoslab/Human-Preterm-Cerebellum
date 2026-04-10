@@ -1,0 +1,381 @@
+```{r}
+library(spatstat.explore)
+library(Seurat)
+library(tricycle)
+library(SingleCellExperiment)
+library(ggplot2)
+library(scattermore)
+library(scater)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(circular)
+library(ggnewscale)
+```
+
+```{r}
+## LOAD ALL
+meta <- read.csv('/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged.csv',row.names=1)
+tricycle_sobj <- readRDS('/mnt/morbo/Data/Users/kwoyshner/cerebellum/projections/tricycle/results/human_Spatial/tricycleResults.RDS')
+outputDir <- '/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/human_allGenes/tricycle_pattern_plots/updateplots_20260403_splitPatsPooled/'
+```
+
+```{r}
+### PLOTTING FUNCTION ADAPTED FROM TRICYCLE GITHUB ###
+### https://github.com/hansenlab/tricycle/blob/74e8d15f28aeed93ca0204e1ddf3db93b988d3a3/R/plot_ccposition_den.R
+
+# Edits to pool averages per pattern rather than all, and to allow custom color palettes for the pooled pattern lines
+# Edit to ensure plots are same y axis 0-1
+
+gg_theme <- theme_bw(base_size = 8) +
+    theme(
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(size = 0.25),
+        axis.ticks = element_line(colour = "black", linetype = 1, size = 0.25),
+        axis.text.y = element_text(size = 6),
+        axis.text.x = element_text(size = 6, vjust = 0.5, hjust = 0.5),
+        axis.title.y = element_text(size = 7),
+        axis.title.x = element_text(size = 7),
+        plot.title = element_text(face = "plain", size = 8, hjust = 0.5),
+        plot.margin = unit(c(5, 5, 6, 6), "pt"),
+        legend.background = element_blank(),
+        legend.position = "right",
+        legend.justification = c(0.5, 0.5),
+        legend.key.size = unit(7, "pt"),
+        legend.key = element_blank(),
+        legend.margin = margin(t = 1, r = 2, b = 2, l = 2, unit = "pt"),
+        legend.title = element_text(size = 5),
+        legend.title.align = 0.5,
+        legend.text.align = 0.5,
+        legend.text = element_text(size = 5),
+        strip.text = element_text(color = "white"),
+        strip.background = element_rect(fill = "black", color = "black")
+    )
+
+plot_ccposition_den_local <- function(theta.v, color_var.v, color_name,
+                                      palette.v = NULL, fig.title = NULL,
+                                      type = c("linear", "circular"),
+                                      bw = 30, weighted = FALSE, line.size = 0.5, line.alpha = 0.5,
+                                      addRug = TRUE, RugPalette.v = NULL, 
+                                      show_global = FALSE,
+                                      group_from_label = function(lbl) { sub("\\..*$", "", lbl) },
+                                      ...) {
+    if ((min(theta.v) < 0) | (max(theta.v) > 2 * pi)) {
+        stop("theta.v need to be between 0 - 2pi.")
+    }
+    if (length(theta.v) != length(color_var.v)) {
+        stop("The length of theta.v and color_var.v should be the same.")
+    }
+    type <- match.arg(type)
+
+    d <- density.circular(circular(theta.v), bw = bw)
+    all.df <- data.frame(x = as.numeric(d$x), y = d$y)
+
+    color_var.v <- factor(color_var.v)
+    if (is.null(palette.v)) {
+        if (nlevels(color_var.v) > 8) {
+            warning("The number of levels of color_var.v is greater than 8.\n Only the top 8 levels of most cell will be shown.\nYou can show them all by feeding enough colors in palette.v.")
+            color_var.v[!(color_var.v %in% names(sort(table(color_var.v), decreasing = TRUE))[seq_len(8)])] <- NA
+        }
+        if (nlevels(color_var.v) == 2) {
+            palette.v <- brewer.pal(3, "Set1")[seq_len(2)]
+        } else {
+            palette.v <- brewer.pal(nlevels(color_var.v), "Set1")
+        }
+    } else {
+        if (nlevels(color_var.v) > length(palette.v)) {
+            warning("The number of colors in palette.v doesn't match the number of levels in color_var.v. ")
+        }
+    }
+
+    if (weighted) {
+        weights <- table(color_var.v) / sum(!is.na(color_var.v), na.rm = TRUE)
+    } else {
+        weights <- rep(1, length(color_var.v))
+    }
+
+    if (is.null(fig.title)) {
+        fig.title <- paste0("(n=", length(theta.v), ")")
+    }
+
+    if (any(is.na(color_var.v))) message("NA found in color_var.v. \nThe cells with NA will be considered for global density but not stratified densities.")
+
+    strati.df <- do.call(rbind, lapply(seq_len(nlevels(color_var.v)), function(idx) {
+        d <- density.circular(circular(theta.v[which(color_var.v == levels(color_var.v)[idx])]), bw = bw)
+        return(data.frame(x = as.numeric(d$x), y = d$y * weights[idx], color = levels(color_var.v)[idx]))
+    }))
+    strati.df$color <- factor(strati.df$color, levels = levels(color_var.v))
+
+    # derive high-level pattern/group from each stratified label (default: strip at first dot)
+    strati.df$pattern <- vapply(as.character(strati.df$color), group_from_label, FUN.VALUE = character(1))
+
+    max.v <- max(all.df$y, strati.df$y)
+
+    # ---- pooled-per-pattern densities (pool raw theta values per pattern and compute density) ----
+    strat_labels <- levels(color_var.v)
+    label_to_pattern <- vapply(strat_labels, group_from_label, FUN.VALUE = character(1))
+    print(label_to_pattern)
+    patterns <- unique(label_to_pattern)
+    pooled_list <- vector("list", length(patterns))
+    names(pooled_list) <- patterns
+
+    for (pat in patterns) {
+        labels_for_pat <- strat_labels[label_to_pattern == pat]
+        keep_idx <- which(color_var.v %in% labels_for_pat)
+        if (length(keep_idx) == 0) {
+            pooled_list[[pat]] <- NULL
+            next
+        }
+        pooled_theta <- theta.v[keep_idx]
+        d_pat <- density.circular(circular(pooled_theta), bw = bw)
+        pooled_list[[pat]] <- data.frame(x = as.numeric(d_pat$x), y = d_pat$y, pattern = pat)
+    }
+    pattern_pooled.df <- do.call(rbind, pooled_list)
+    if (!is.null(pattern_pooled.df)) rownames(pattern_pooled.df) <- NULL
+
+    # produce darker variant colors for each pattern from the provided palette
+    if (!is.null(palette.v) && !is.null(names(palette.v))) {
+        grouped_palette <- split(palette.v, group_from_label(names(palette.v)))
+        pattern_palette <- vapply(grouped_palette, function(vals) vals[1], FUN.VALUE = character(1))
+        darken_col <- function(col, factor = 0.6) {
+            m <- grDevices::col2rgb(col)
+            r <- round(m[1, 1] * factor)
+            g <- round(m[2, 1] * factor)
+            b <- round(m[3, 1] * factor)
+            grDevices::rgb(r, g, b, maxColorValue = 255)
+        }
+        pattern_dark <- vapply(pattern_palette, darken_col, FUN.VALUE = character(1))
+        names(pattern_dark) <- names(pattern_palette)
+        pattern_base <- pattern_palette
+    } else {
+        uniq_patterns <- unique(strati.df$pattern)
+        pattern_dark <- setNames(rep("black", length(uniq_patterns)), uniq_patterns)
+        pattern_base <- pattern_dark
+    }
+
+    if (type == "linear") {
+        # make the many stratified lines slightly thinner so mean stands out
+        strat_line_size <- max(0.08, line.size * 0.45)
+
+        p <- ggplot(strati.df, aes_string(x = "x", y = "y")) +
+            geom_path(aes_string(color = "color"), size = strat_line_size, alpha = line.alpha, ...)
+
+        # add pooled-per-pattern dashed lines (one pooled density per pattern)
+        if (!is.null(pattern_pooled.df) && nrow(pattern_pooled.df) > 0) {
+            for (pat in unique(pattern_pooled.df$pattern)) {
+                pat_df <- pattern_pooled.df[pattern_pooled.df$pattern == pat, , drop = FALSE]
+                color_for_pat <- if (!is.null(pattern_dark[pat])) {
+                    pattern_dark[pat]
+                } else if (!is.null(pattern_base[pat])) {
+                    pattern_base[pat]
+                } else {
+                    "black"
+                }
+                p <- p + geom_path(data = pat_df, aes(x = x, y = y),
+                                   color = color_for_pat, linetype = "dashed",
+                                   size = line.size + 1.5, alpha = 1, inherit.aes = FALSE)
+            }
+        }
+
+        # optionally keep global dashed black line (pooled over all samples)
+        if (isTRUE(show_global)) {
+            p <- p + geom_path(data = all.df, size = line.size, alpha = line.alpha, color = "black", linetype = "dashed", ...)
+        }
+
+        p <- p +
+            scale_color_manual(values = palette.v, name = color_name, labels = paste0(levels(color_var.v), "\nn=", table(color_var.v)), limits = levels(color_var.v)) +
+            scale_x_continuous(limits = c(0, 2 * pi), breaks = c(0, pi / 2, pi, 3 * pi / 2, 2 * pi), labels = paste0(c(0, 0.5, 1, 1.5, 2), "\u03C0"), name = "\u03b8") +
+            labs(title = fig.title, y = "Density") +
+            scale_y_continuous(limits = c(0, 1.15), breaks = c(0, 0.25, 0.5, 0.75, 1), labels = c("0.00","0.25","0.50","0.75","1.00")) +
+            gg_theme
+        if (addRug) {
+            if (is.null(RugPalette.v)) RugPalette.v <- c("#2E22EA","#9E3DFB", "#F86BE2", "#FCCE7B", "#C4E416", "#4BBA0F", "#447D87", "#2C24E9")
+            rug.df <- data.frame(x = seq(from = 0, to = 2 * pi, length.out = 200), y = 1)
+            p <- p + 
+                new_scale_color() +
+                geom_rug(data = rug.df, aes_string(x = "x", color = "x"), sides = "b", inherit.aes = FALSE) +
+                scale_color_gradientn(limits = range(0, 2 * pi), breaks = seq(from = 0, to = 2 * pi, length.out = 100), colors = RugPalette.v, guide = "none")
+
+        }
+    } else {
+        # make the many stratified lines slightly thinner so mean stands out
+        strat_line_size <- max(0.08, line.size * 0.45)
+
+        p <- ggplot(strati.df, aes(x = get("x"), y = get("y") + max.v)) +
+            geom_path(aes_string(color = "color"), size = strat_line_size, alpha = line.alpha, ...)
+
+        # add pooled-per-pattern dashed lines (circular; shift by max.v)
+        if (!is.null(pattern_pooled.df) && nrow(pattern_pooled.df) > 0) {
+            for (pat in unique(pattern_pooled.df$pattern)) {
+                pat_df <- pattern_pooled.df[pattern_pooled.df$pattern == pat, , drop = FALSE]
+                pat_df$y <- pat_df$y + max.v
+                color_for_pat <- if (!is.null(pattern_dark[pat])) {
+                    pattern_dark[pat]
+                } else if (!is.null(pattern_base[pat])) {
+                    pattern_base[pat]
+                } else {
+                    "black"
+                }
+                p <- p + geom_path(data = pat_df, aes(x = x, y = y),
+                                   color = color_for_pat, linetype = "dashed",
+                                   size = line.size + 1.5, alpha = 1, inherit.aes = FALSE)
+            }
+        }
+
+        # optionally keep global dashed black line (pooled over all samples)
+        if (isTRUE(show_global)) {
+            p <- p + geom_path(data = all.df, size = line.size, alpha = line.alpha, color = "black", linetype = "dashed", ...)
+        }
+
+        p <- p +
+            scale_color_manual(values = palette.v, name = color_name, labels = paste0(levels(color_var.v), "\nn=", table(color_var.v)), limits = levels(color_var.v)) +
+            coord_polar(theta = "x", start = -pi / 2, direction = -1, clip = "on") +
+            scale_x_continuous(limits = c(0, 2 * pi), breaks = c(0, pi / 2, pi, 3 * pi / 2), labels = paste0(c(0, 0.5, 1, 1.5), "\u03C0"), name = "") +
+            scale_y_continuous(limits = c(0, max.v * 2), breaks = c(max.v, max.v * 1.5, max.v * 2), labels = c("0", format(max.v * c(0.5, 1), digits = 3)), name = "Density") +
+            labs(title = fig.title) +
+            scale_y_continuous(limits = c(0, 1.15), breaks = c(0, 0.25, 0.5, 0.75, 1), labels = c("0.00","0.25","0.50","0.75","1.00")) +
+            gg_theme
+        if (addRug) {
+            if (is.null(RugPalette.v)) RugPalette.v <- c("#2E22EA","#9E3DFB", "#F86BE2", "#FCCE7B", "#C4E416", "#4BBA0F", "#447D87", "#2C24E9")
+            rug.df <- data.frame(x = seq(from = 0, to = 2 * pi, length.out = 200), y = 1)[-1, ]
+            p <- p + 
+                new_scale_color() +
+                geom_rect(data = rug.df, inherit.aes = FALSE, 
+                          aes( xmin = x , xmax = x , color = x, fill = x),
+                          ymin = max.v * 0.75, ymax = max.v * 0.95, alpha = 0.6) +
+                scale_color_gradientn(limits = range(0, 2 * pi), breaks = seq(from = 0, to = 2 * pi, length.out = 100), colors = RugPalette.v, guide = "none") +
+                scale_fill_gradientn(limits = range(0, 2 * pi), breaks = seq(from = 0, to = 2 * pi, length.out = 100), colors = RugPalette.v, guide = "none")
+
+        }
+    }
+
+    return(p)
+}
+```
+
+############ BINARY PATTERNS USING 95th PERCENTILE ###############
+
+###### BINARY PATTERNS - 95th percentile, raw counts
+
+```{r}
+## PLOT PATTERNS - 95th percentile
+pattern_df <- read.csv("/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/human_allGenes/tricycle_pattern_plots/patterns_binary.csv")
+pattern_df <- pattern_df[,c("X", "Pattern_16_95", "Pattern_17_95", "Pattern_27_95")]
+pattern_long <- melt(pattern_df,id.vars = "X") # X is cell id
+colnames(pattern_long) <- c("Cell", "Pattern", "Active")
+pattern_long <- pattern_long[pattern_long$Active == 1, ] # only keep those that pass the 95th percentile threshold for being "active" in that pattern
+pattern_long$Theta <- tricycle_sobj[,pattern_long$Cell]$tricyclePosition # add theta from tricycle result object
+pattern_long$Cell_Type <- meta[pattern_long$Cell, "Cell_Type"] # add Cell Type info from meta using cell ids
+pattern_long$Subject <- meta[pattern_long$Cell, "Subject"] # add Subject info from meta using cell ids
+
+pattern_long_sub <- pattern_long
+
+### Categorize subjects into groups 
+extreme_preterm <- c(21, 4276, 934)
+preterm <- c(4544, 4389, 1154, 4434)
+term <- c(1055,1208,1210,1061)
+
+pattern_long_sub$Subject_Group <- ifelse(pattern_long_sub$Subject %in% extreme_preterm, "Extreme Preterm",
+                                           ifelse(pattern_long_sub$Subject %in% preterm, "Preterm",
+                                                  ifelse(pattern_long_sub$Subject %in% term, "Term", "Other")))
+
+### Summarize number of cell type/pattern/patient combinations per group
+summary_df <- pattern_long_sub %>%
+  group_by(Subject_Group, Pattern) %>% #Cell_Type
+  summarise(Count = n()) %>%
+  ungroup()
+
+# Helper to generate light-to-base shades
+make_shades <- function(base_col, n) {
+  # create n shades from a light version to the base color
+  lighten <- function(col, f = 0.6) {
+    rgb_val <- col2rgb(col)
+    rgb(t(round(rgb_val + (255 - rgb_val) * f)), maxColorValue = 255)
+  }
+  light_col <- lighten(base_col, f = 0.75)  # lighter start
+  colorRampPalette(c(light_col, base_col))(n)
+}
+
+# Base colors per pattern (16=red, 27=green, 17=blue)
+pattern_base_cols <- c(
+  "Pattern_16_95" = "#D62728", # red
+  "Pattern_27_95" = "#2CA02C", # green
+  "Pattern_17_95" = "#1F77B4"  # blue
+)
+
+# Loop over Subject_Group values
+min_n <- 10  # cutoff for minimum cells per Pattern–Subject
+
+for (subgrp in unique(pattern_long_sub$Subject_Group)) {
+
+    # Subset data for this group
+    pattern_long_sub_sub <- pattern_long_sub[pattern_long_sub$Subject_Group == subgrp, , drop = FALSE] # subset to group
+
+    # Count per Pattern–Subject
+    summary_df_sub <- pattern_long_sub_sub %>%
+        dplyr::group_by(Pattern, Subject) %>%
+        dplyr::summarise(Count = dplyr::n(), .groups = "drop")
+
+    # Keep only Pattern–Subject combos with at least min_n cells
+    keep_pairs <- summary_df_sub %>%
+        dplyr::filter(Count >= min_n) %>%
+        dplyr::mutate(key = paste(Pattern, Subject, sep = ".")) %>%
+        dplyr::pull(key)
+
+    # Filter the data accordingly
+    pattern_long_sub_sub <- pattern_long_sub_sub %>%
+        dplyr::mutate(key = paste(Pattern, Subject, sep = ".")) %>%
+        dplyr::filter(key %in% keep_pairs)
+
+    # If nothing passes the filter, skip plotting this group
+    if (nrow(pattern_long_sub_sub) == 0) {
+        message(sprintf("No Pattern–Subject pairs with >= %d cells in group '%s'. Skipping.", min_n, subgrp))
+        next
+    }
+
+    # Interaction labels for Pattern.Subject (used by plot_ccposition_den)
+    sub_labels <- interaction(pattern_long_sub_sub$Pattern, pattern_long_sub_sub$Subject, drop = TRUE)
+    lvl <- levels(sub_labels)
+
+    # Unique subjects and patterns present after filtering
+    subj_in_group <- sort(unique(pattern_long_sub_sub$Subject))
+    patterns_in_group <- sort(unique(pattern_long_sub_sub$Pattern))
+
+    # Build a palette: for each pattern, shades across subjects
+    palette_vec <- c()
+    for (pat in patterns_in_group) {
+        base_col <- pattern_base_cols[[pat]]
+        shades <- make_shades(base_col, length(subj_in_group))
+        names(shades) <- paste(pat, subj_in_group, sep = ".")  # match interaction naming
+        palette_vec <- c(palette_vec, shades)
+    }
+
+    # Subset and order palette to match the factor levels of sub_labels
+    my_palette <- palette_vec[lvl]
+    names(my_palette) <- lvl
+
+    # Plot
+    pdf(file = paste0(outputDir, "plot_density_theta_binaryPats_SUBJECT_", subgrp, "_splitAvg.pdf"),
+        width = 10, height = 10)
+
+    p <- plot_ccposition_den_local(
+        pattern_long_sub_sub$Theta,
+        sub_labels,
+        'Pattern',
+        bw = 10,
+        fig.title = paste0('Tricycle theta density plot, group ', subgrp, ' binarized patterns from 95th percentile (>=', min_n, ' spots)'),
+        palette.v = my_palette,
+        lwd = 1
+        ) + ggpubr::theme_pubr()
+
+    print(p)
+    dev.off()
+}
+```
+
+
