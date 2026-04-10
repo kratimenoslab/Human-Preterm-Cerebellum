@@ -1,0 +1,34 @@
+```{r}
+library(spatstat.explore)
+library(Seurat)
+library(tricycle)
+library(SingleCellExperiment)
+library(ggplot2)
+library(scattermore)
+library(scater)
+```
+
+```{r}
+load('/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/human_sobj_transformed_projected.rda')
+human_data <- as.matrix(sobj@assays[["Spatial"]]@counts) # genes by spots [36601 74096]
+human_data_SCT <- as.matrix(sobj@assays[["SCT"]]@data) # genes by spots [26501 74096]
+```
+
+```{r}
+## RUN TRICYCLE ON LOG RAW COUNTS
+sce <- SingleCellExperiment(list(logcounts = log1p(human_data)))
+
+# Stage cell cycle
+sce_stage <- sce
+cc_stage <- estimate_Schwabe_stage(sce_stage,
+                                  gname.type = 'SYMBOL',
+                                  species = 'human')
+
+write.csv(cc_stage@colData, '/mnt/morbo/Data/Users/kwoyshner/cerebellum/projections/tricycle/results/human_Spatial/cellcycleStage.csv')
+
+# Calc tricycle
+tricycle_sobj <- project_cycle_space(cc_stage, species="human", gname.type = c("SYMBOL"))
+tricycle_sobj_cellPos <- estimate_cycle_position(tricycle_sobj)
+#tricycle_sobj_cellPos$cc_stage <- cc_stage@colData$stage
+saveRDS(tricycle_sobj_cellPos, '/mnt/morbo/Data/Users/kwoyshner/cerebellum/projections/tricycle/results/human_Spatial/tricycleResults.RDS')
+```
