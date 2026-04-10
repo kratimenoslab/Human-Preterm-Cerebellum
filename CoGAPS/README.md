@@ -1,7 +1,9 @@
 # CoGAPS Analysis
 
-Placeholder for CoGAPS (Coordinated Gene Activity across Pattern Subsets) analysis code and data.
+CoGAPS (Coordinated Gene Activity across Pattern Subsets) analysis code.
 
-## Status
+## Overview
 
-Awaiting upload from collaborators.
+cerebellum_cogaps_human.R : Run script for CoGAPS factorization
+n30_cogaps_analyzePats.ipynb : Analyze outputs including pattern visualizations and metadata correlations
+
