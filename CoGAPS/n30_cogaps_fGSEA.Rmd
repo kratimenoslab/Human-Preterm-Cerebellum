@@ -1,0 +1,74 @@
+---
+title: "Parse cogaps out"
+author: "Kyla Woyshner"
+date: "2/26/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(fgsea)
+library(dplyr)
+library(ggplot2)
+```
+
+####### LOAD DATA ########
+```{r}
+NMF <- readRDS('/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/human_allGenes/human_CB_cogaps_n30_nIterations15k_allGenes.RDS')
+savename <- '/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/human_allGenes/human_CB_cogaps_n30_nIterations15k_allGenes'
+```
+
+####### PARSE DATA ########
+```{r}
+# P matrix = samples x Patterns
+sampleWeights<-t(NMF@sampleFactors) # patterns x samples
+
+# A matrix = genes x Patterns
+geneWeights<-NMF@featureLoadings
+```
+
+
+############## FGSEA HELPER FUNCTIONS ####################
+```{r}
+run_fgsea_on_matrix_geneWeights <- function(gene_sets, expression_matrix, scoreType) {
+  col_names <- colnames(expression_matrix)
+  cat("Processing expression matrix with", ncol(expression_matrix), "columns.\n")
+  # Use sapply to iterate over each column of the matrix
+  results <- sapply(seq(ncol(expression_matrix)), function(col_index) {
+    cat("Running fgsea for", col_names[col_index], "\n")
+
+    # Use tryCatch to handle errors during fgsea
+    tryCatch({
+      fgsea_results <- fgsea(gene_sets, expression_matrix[, col_index], scoreType = scoreType)
+      return(fgsea_results)
+    }, error = function(err) {
+      # Handle the error as needed
+      warning(paste("Error in column", colnames(expression_matrix)[col_index], ":", conditionMessage(err)))
+      return(NULL)
+    })
+  }, simplify = FALSE)
+
+  names(results) <- colnames(expression_matrix)
+  return(results)
+}
+```
+
+################### USE GENE WEIGHTS #########################
+############ FGSEA ON GO TERMS ####################
+```{r}
+msigdbr_list =  msigdbr::msigdbr(species = "Homo sapiens", category = "C5") # C5 is go terms
+msigdbr_list_GO = msigdbr_list %>%
+  dplyr::filter(gs_subcat != "HPO")
+pathways = split(x = msigdbr_list_GO$gene_symbol, f = msigdbr_list_GO$gs_name)
+
+
+fgsea_human_CB_GO <- run_fgsea_on_matrix_geneWeights(pathways, geneWeights, scoreType = "pos")
+saveRDS(fgsea_human_CB_GO, paste0(savename, "_fgseaGO_geneWeights.RDS")) # SAVE RDS OF THIS
+
+require(openxlsx)
+write.xlsx(fgsea_human_CB_GO, file = paste0(savename, "_fgseaGO_geneWeights.xlsx")) # SAVE DF OF THIS
+
+```
