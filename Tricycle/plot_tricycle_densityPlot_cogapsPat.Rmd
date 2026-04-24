@@ -19,7 +19,7 @@ library(ggnewscale)
 
 ```{r}
 ## LOAD ALL
-meta <- read.csv('/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged.csv',row.names=1)
+meta <- read.csv('/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged_updateSampleID.csv',row.names=1)
 tricycle_sobj <- readRDS('/mnt/morbo/Data/Users/kwoyshner/cerebellum/projections/tricycle/results/human_Spatial/tricycleResults.RDS')
 outputDir <- '/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/human_allGenes/tricycle_pattern_plots/updateplots_20260403_splitPatsPooled/'
 ```
@@ -271,14 +271,14 @@ colnames(pattern_long) <- c("Cell", "Pattern", "Active")
 pattern_long <- pattern_long[pattern_long$Active == 1, ] # only keep those that pass the 95th percentile threshold for being "active" in that pattern
 pattern_long$Theta <- tricycle_sobj[,pattern_long$Cell]$tricyclePosition # add theta from tricycle result object
 pattern_long$Cell_Type <- meta[pattern_long$Cell, "Cell_Type"] # add Cell Type info from meta using cell ids
-pattern_long$Subject <- meta[pattern_long$Cell, "Subject"] # add Subject info from meta using cell ids
+pattern_long$Subject <- meta[pattern_long$Cell, "Subject_newID"] # add Subject info from meta using cell ids
 
 pattern_long_sub <- pattern_long
 
 ### Categorize subjects into groups 
-extreme_preterm <- c(21, 4276, 934)
-preterm <- c(4544, 4389, 1154, 4434)
-term <- c(1055,1208,1210,1061)
+extreme_preterm <- c('Preterm 60', 'Preterm 59', 'Preterm 1')
+preterm <- c('Preterm 58', 'Preterm 57', 'Preterm 61', 'Preterm 52')
+term <- c('Term 24', 'Term 25', 'Term 3', 'Term 1')
 
 pattern_long_sub$Subject_Group <- ifelse(pattern_long_sub$Subject %in% extreme_preterm, "Extreme Preterm",
                                            ifelse(pattern_long_sub$Subject %in% preterm, "Preterm",
@@ -360,7 +360,7 @@ for (subgrp in unique(pattern_long_sub$Subject_Group)) {
     names(my_palette) <- lvl
 
     # Plot
-    pdf(file = paste0(outputDir, "plot_density_theta_binaryPats_SUBJECT_", subgrp, "_splitAvg.pdf"),
+    pdf(file = paste0(outputDir, "new_plot_density_theta_binaryPats_SUBJECT_", subgrp, "_splitAvg.pdf"),
         width = 10, height = 10)
 
     p <- plot_ccposition_den_local(
