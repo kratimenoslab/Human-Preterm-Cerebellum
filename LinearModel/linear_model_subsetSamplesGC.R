@@ -2,7 +2,8 @@ library(spatstat.explore)
 library(Seurat)
 library(lme4)
 
-meta <- read.csv("/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged.csv", row.names = 1)
+meta <- read.csv("/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged_updateSampleID.csv", row.names = 1)
+meta$patient <- meta$Subject_newID
 
 meta$patient_replicate_CT <- paste0(meta$patient, meta$replicate, '_', meta$Cell_Type)
 
@@ -23,7 +24,7 @@ data <- merge(
     )
 
 data$Preterm <- ifelse(data$Gestational.Age..Weeks. < 38, 1, 0)
-data_ptsub <- data[data$patient != "outlier", ]  # Remove outlier patient (the 3 year old)
+data_ptsub <- data[data$patient != "NA", ]  # Remove outlier patient
 data_ptsub <- data_ptsub[data_ptsub$Age.at.Death..weeks. > 45, ]
 data_ptsub$patient <- as.factor(data_ptsub$patient)
 

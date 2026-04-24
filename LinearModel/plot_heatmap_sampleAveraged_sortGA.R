@@ -17,7 +17,9 @@ spatial_matrix <- as.matrix(sobj_sub@assays[["Spatial"]]@counts)
 log_spatial_matrix <- log1p(spatial_matrix)
 log_spatial_matrix <- t(log_spatial_matrix)
 
-meta <- read.csv("/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged.csv", row.names = 1)
+meta <- read.csv("/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/clinical_meta_merged_updateSampleID.csv", row.names = 1)
+meta$patient <- meta$Subject_newID
+
 meta <- meta[rownames(log_spatial_matrix),] # make sure these align
 
 data <- merge(
@@ -28,7 +30,7 @@ data <- merge(
 
 rownames(data) <- data$Row.names
 data$Preterm <- ifelse(data$Gestational.Age..Weeks. < 38, 1, 0) # define preterm as < 38 weeks
-data_ptsub <- data[data$patient != "outlier", ]  # Remove outlier patient (the 3 year old)
+data_ptsub <- data[data$patient != "NA", ]  # Remove outlier patient
 data_ptsub$patient <- as.factor(data_ptsub$patient) # make patient a factor
 data_ptsub <- data_ptsub[data_ptsub$Age.at.Death..weeks. > 45, ] # subset to PMA > 45 (drop low outliers)
 
