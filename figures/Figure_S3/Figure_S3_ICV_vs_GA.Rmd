@@ -1,0 +1,80 @@
+---
+title: "Figure S3: ICV-normalized cerebellar volume vs gestational age"
+subtitle: "Cerebellum/ICV ratio vs GA (PMA-adjusted partial r); was R4-11 ICV-normalized panel"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document: { toc: true, toc_float: true, theme: flatly, code_folding: hide }
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 3, fig.height = 3.3, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Supplement panel **Figure S3** (= the "ICV-normalized" panel of the R4-11 volumetric analysis; the "Absolute"
+panel is main Figure 1A). Cerebellar volume normalized to intracranial volume (Cerebellum/ICV ratio) vs
+gestational age at birth. Trend line = PMA-adjusted fit; r/P = **PMA-adjusted partial r** for GA (identical
+method to Fig 1A). N = 120 (volumetric MRI cohort).
+
+```{r figure-s3a, fig.width=3, fig.height=3.3}
+library(readxl); library(dplyr); library(ggplot2)
+
+ga_cols <- c(EP = "#030403", VP = "#DE1567", LP = "#7BACDC")
+data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+
+d <- read_excel(data_file, sheet = "MRI") %>% filter(Included == "Yes") %>%
+ mutate(GA_group = factor(GA_Group, levels = c("EP","VP","LP")),
+ PMA_c = MRI_PMA_weeks - mean(MRI_PMA_weeks, na.rm = TRUE))
+
+# PMA-adjusted fit + partial r for GA (exact R4-11 method)
+m <- lm(Cerebellum_ICV_ratio ~ PMA_c + GA_weeks, data = d)
+s <- summary(m)
+t_ga <- s$coefficients["GA_weeks","t value"]
+pr <- t_ga / sqrt(t_ga^2 + m$df.residual)
+p_ols <- s$coefficients["GA_weeks","Pr(>|t|)"]
+lab <- sprintf("italic(r) == %.2f ~~ italic(P) %s", pr,
+ ifelse(p_ols < 0.001, "< 0.001", paste0("== ", sprintf('%.3f', p_ols))))
+
+ga_seq <- seq(min(d$GA_weeks), max(d$GA_weeks), length.out = 100)
+pd <- data.frame(GA_weeks = ga_seq, PMA_c = 0)
+ci <- predict(m, newdata = pd, interval = "confidence")
+pd$fit <- ci[,1]; pd$lwr <- ci[,2]; pd$upr <- ci[,3]
+
+p <- ggplot(d, aes(GA_weeks, Cerebellum_ICV_ratio)) +
+ geom_ribbon(data = pd, aes(GA_weeks, ymin = lwr, ymax = upr), inherit.aes = FALSE,
+ fill = "gray80", alpha = 0.3) +
+ geom_line(data = pd, aes(GA_weeks, fit), inherit.aes = FALSE, colour = "black", linewidth = 0.4) +
+ geom_point(aes(colour = GA_group), size = 1.8, alpha = 1) +
+ annotate("text", x = Inf, y = Inf, label = lab, parse = TRUE, hjust = 1.05, vjust = 1.7, size = 3) +
+ scale_colour_manual(values = ga_cols, name = NULL) +
+ labs(x = "Gestational age at birth (weeks)",
+ y = expression("Cerebellar volume (mm"^3*") / ICV (mm"^3*")")) +
+ theme_classic(base_size = 10) +
+ theme(legend.position = "bottom", panel.grid = element_blank(),
+ axis.line = element_blank(), panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.title = element_text(size = 10), axis.text = element_text(size = 10),
+ legend.text = element_text(size = 8), legend.key.size = unit(0.3, "cm"),
+ plot.margin = margin(4, 6, 3, 3))
+p
+ggsave("Figure_S3_ICV_vs_GA.pdf", p, width = 3, height = 3.3, dpi = 300)
+message("Saved Figure_S3_ICV_vs_GA.{pdf,png}")
+```
+
+```{r session}
+sessionInfo()
+```

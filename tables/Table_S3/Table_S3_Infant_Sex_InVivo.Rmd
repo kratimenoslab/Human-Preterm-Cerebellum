@@ -1,0 +1,169 @@
+---
+title: "Table S3 — Effect of infant sex on the primary in vivo analyses"
+subtitle: "Infant sex added as a covariate to each primary in vivo estimate (sensitivity analysis)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+suppressMessages({library(readxl); library(dplyr); library(lme4); library(lmerTest)
+                  library(knitr); library(kableExtra)})
+
+find_data_dir <- function(max_up = 6) {
+  prefix <- "."
+  for (i in 0:max_up) { cand <- file.path(prefix, "Supplementary_Datasets"); if (dir.exists(cand)) return(cand)
+    prefix <- file.path(prefix, "..") }
+  stop("Supplementary_Datasets/ not found above ", normalizePath("."))
+}
+V2   <- file.path(find_data_dir(), "Dataset_Clinical_MRI_US_ND.xlsx")
+
+sexf <- function(x) factor(dplyr::case_match(toupper(trimws(as.character(x))), "M" ~ "Male", "F" ~ "Female",
+                                         .default = NA_character_), levels = c("Female","Male"))
+pf   <- function(p) ifelse(is.na(p), "NA", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))
+mn   <- function(s) gsub("-", "−", s)   # ASCII hyphen -> typographic minus
+```
+
+# Overview
+
+Reviewer question: could infant sex confound the primary in vivo findings? For each primary estimate,
+the effect is refit **with** infant sex added to the model and compared with the estimate **without**
+sex; the table also reports the sex main effect and (where applicable) the sex-interaction *P*. The
+framing is **"is sex a confounder"**: sex is unassociated with gestational age or GA group, so it
+cannot confound.
+
+# Load data and fit models
+
+```{r models}
+# --- MRI cohort (term-equivalent volume) ---
+mri <- read_excel(V2, "MRI") %>% filter(Included == "Yes") %>%
+  mutate(Study_ID = as.character(Study_ID), Sex = sexf(Sex),
+         PMA_c = MRI_PMA_weeks - mean(MRI_PMA_weeks, na.rm = TRUE)) %>% filter(!is.na(Sex))
+mr <- mri %>% filter(!is.na(Cerebellar_Volume_mm3), !is.na(ICV_mm3)) %>%
+  mutate(r = Cerebellar_Volume_mm3 / ICV_mm3)
+
+# GA coefficient without / with sex; sex main effect; GA x sex interaction P
+rl <- function(df, y) {
+  ms <- lm(reformulate(c("PMA_c","GA_weeks","Sex"), y), df)
+  mi <- lm(reformulate(c("PMA_c","GA_weeks*Sex"), y), df); ic <- summary(mi)$coefficients
+  list(eff = coef(ms)["SexMale"], p = summary(ms)$coefficients["SexMale","Pr(>|t|)"],
+       ip = ic[grep(":", rownames(ic))[1], 4]) }
+a1 <- rl(mri, "Cerebellar_Volume_mm3"); a2 <- rl(mr, "r")
+vb0 <- coef(lm(Cerebellar_Volume_mm3 ~ PMA_c + GA_weeks, mri))["GA_weeks"]
+vb1 <- coef(lm(Cerebellar_Volume_mm3 ~ PMA_c + GA_weeks + Sex, mri))["GA_weeks"]
+rb0 <- coef(lm(r ~ PMA_c + GA_weeks, mr))["GA_weeks"]
+rb1 <- coef(lm(r ~ PMA_c + GA_weeks + Sex, mr))["GA_weeks"]
+rSex <- coef(lm(r ~ PMA_c + GA_weeks + Sex, mr))["SexMale"]
+
+# --- Ultrasound coronal composite (mixed model) ---
+iqr_out <- function(x, k = 3){ q <- quantile(x, c(.25,.75), na.rm=TRUE); i <- IQR(x, na.rm=TRUE); x < q[1]-k*i | x > q[2]+k*i }
+u <- read_excel(V2, "Ultrasound") %>%
+  mutate(Study_ID = as.character(Study_ID), Sex = sexf(Sex),
+         GA_Category = factor(GA_Group, levels = c("EP","VP","LP"))) %>% filter(!is.na(Sex))
+for (cc in c("Coronal_Height","Coronal_Transverse","Coronal_Area")) u[[cc]][iqr_out(u[[cc]])] <- NA
+cw <- { cm <- cor(u[c("Coronal_Height","Coronal_Transverse","Coronal_Area")], use="pairwise.complete.obs")
+        w <- 1 - sapply(1:3, function(i) mean(abs(cm[i,-i]))); w/sum(w) }
+u <- u %>% mutate(US_Coronal_Composite = cw[1]*as.numeric(scale(Coronal_Height)) +
+                    cw[2]*as.numeric(scale(Coronal_Transverse)) + cw[3]*as.numeric(scale(Coronal_Area))) %>%
+  filter(!is.na(US_Coronal_Composite)) %>% mutate(PMA_c = PMA_weeks - mean(PMA_weeks, na.rm = TRUE))
+ctl <- lmerControl(optimizer="bobyqa", optCtrl=list(maxfun=1e5))
+f0 <- lmer(US_Coronal_Composite ~ PMA_c*GA_Category + (1+PMA_c|Study_ID), u, control=ctl)
+f1 <- lmer(US_Coronal_Composite ~ PMA_c*GA_Category + Sex + (1+PMA_c|Study_ID), u, control=ctl)
+fI <- lmer(US_Coronal_Composite ~ PMA_c*GA_Category + Sex + PMA_c:Sex + (1+PMA_c|Study_ID), u, control=ctl)
+
+# --- Neurodevelopmental delay (EP+VP analytic cohort) ---
+ov2 <- read_excel(V2, "Overview") %>% transmute(Study_ID = as.character(Study_ID), Sex_ov = sexf(Sex))
+nd <- read_excel(V2, "Neurodevelopmental") %>% mutate(Study_ID = as.character(Study_ID)) %>%
+  left_join(ov2, by="Study_ID") %>% filter(Any_Delay %in% c("Y","N"), !is.na(Sex_ov)) %>%
+  mutate(Sex = Sex_ov, delay = as.integer(Any_Delay=="Y"), GA_Group = factor(GA_Group, levels=c("EP","VP","LP"))) %>%
+  filter(GA_Group %in% c("EP","VP")) %>%
+  filter(Motor_Delay %in% c("Y","N") | Language_Delay %in% c("Y","N") | Cognitive_Delay %in% c("Y","N")) %>%
+  mutate(GA_Group = droplevels(GA_Group))
+
+dom <- function(col) {
+  dd <- nd %>% mutate(y = ifelse(.data[[col]]=="Y",1L, ifelse(.data[[col]]=="N",0L,NA))) %>% filter(!is.na(y))
+  m <- glm(y ~ GA_Group + Sex, dd, family=binomial); ci <- suppressMessages(confint(m))
+  o0 <- exp(coef(glm(y ~ GA_Group, dd, family=binomial))["GA_GroupVP"]); o1 <- exp(coef(m)["GA_GroupVP"])
+  list(n = nrow(dd), o0 = o0, o1 = o1, orSex = exp(coef(m)["SexMale"]),
+       lo = exp(ci["SexMale",1]), hi = exp(ci["SexMale",2]), p = summary(m)$coefficients["SexMale","Pr(>|z|)"]) }
+dAny <- dom("Any_Delay"); dMot <- dom("Motor_Delay"); dCog <- dom("Cognitive_Delay"); dLan <- dom("Language_Delay")
+
+# --- Delay at equal cerebellar volume (reviewer's specific question) ---
+mri2 <- read_excel(V2, "MRI") %>% filter(Included=="Yes") %>%
+  transmute(Study_ID = as.character(Study_ID), CerebVol = Cerebellar_Volume_mm3)
+vd <- nd %>% inner_join(mri2, by="Study_ID") %>% filter(!is.na(CerebVol)) %>% mutate(GA_Group = droplevels(GA_Group))
+mv  <- glm(delay ~ CerebVol + GA_Group + Sex, vd, family=binomial); civ <- suppressMessages(confint(mv))
+mi2 <- glm(delay ~ CerebVol*Sex + GA_Group, vd, family=binomial)
+gtab <- as.integer(table(vd$GA_Group))
+```
+
+# Table S3
+
+```{r tableS3, echo=FALSE}
+drow <- function(lab, d) c(lab, as.character(d$n),
+  sprintf("OR (VP vs. EP) %.2f → %.2f", d$o0, d$o1),
+  sprintf("OR %.2f (%.2f to %.2f)", d$orSex, d$lo, d$hi), pf(d$p), "Not fitted")
+
+rows <- list(
+  c("Cerebellar volume (mm³)", "120",
+    sprintf("β GA %.1f → %.1f", vb0, vb1),
+    mn(paste0(sprintf("%+.4g", a1$eff), " mm³")),
+    pf(a1$p), paste0(pf(a1$ip), " (GA × sex)")),
+  c("Cerebellar volume / ICV (×10⁻⁴)", "120",
+    sprintf("β GA %.2f → %.2f", rb0*1e4, rb1*1e4),
+    mn(sprintf("%+.1f", rSex*1e4)),
+    pf(a2$p), paste0(pf(a2$ip), " (GA × sex)")),
+  c("US coronal composite (Z score)",
+    sprintf("%d scans / %d infants", nrow(u), n_distinct(u$Study_ID)),
+    sprintf("β PMA %.3f → %.3f", fixef(f0)["PMA_c"], fixef(f1)["PMA_c"]),
+    mn(sprintf("%+.3f Z", summary(f1)$coefficients["SexMale","Estimate"])),
+    pf(summary(f1)$coefficients["SexMale","Pr(>|t|)"]),
+    paste0(pf(summary(fI)$coefficients["PMA_c:SexMale","Pr(>|t|)"]), " (PMA × sex)")),
+  drow("Any delay", dAny), drow("Motor delay", dMot),
+  drow("Cognitive delay", dCog), drow("Language delay", dLan),
+  c("Delay at equal cerebellar volume",
+    sprintf("%d (EP %d / VP %d)", nrow(vd), gtab[1], gtab[2]),
+    sprintf("OR %.2f per 1,000 mm³ (%.2f to %.2f)",
+            exp(coef(mv)["CerebVol"]*1000), exp(civ["CerebVol",1]*1000), exp(civ["CerebVol",2]*1000)),
+    sprintf("OR %.2f (%.2f to %.2f)", exp(coef(mv)["SexMale"]), exp(civ["SexMale",1]), exp(civ["SexMale",2])),
+    pf(summary(mv)$coefficients["SexMale","Pr(>|z|)"]),
+    paste0(pf(anova(mv, mi2, test="Chisq")$`Pr(>Chi)`[2]), " (volume × sex)")))
+
+S3 <- as.data.frame(do.call(rbind, rows), stringsAsFactors = FALSE)
+names(S3) <- c("Analysis","n","Primary estimate (without sex → with sex)",
+               "Sex effect (male vs. female)","Sex P","Interaction P")
+
+kable(S3, align = c("l","c","l","c","c","c"),
+      caption = "Table S3. Effect of infant sex on the primary in vivo analyses.") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Caption statistics (computed, not hard-coded)
+
+```{r caption, echo=FALSE, results="asis"}
+ov <- read_excel(V2, "Overview") %>% filter(Included == "Yes") %>%
+  mutate(Sex = sexf(Sex), GA_Group = factor(GA_Group, levels = c("EP","VP","LP"))) %>% filter(!is.na(Sex))
+tb <- table(ov$GA_Group, ov$Sex)
+balance <- paste0(paste(sapply(rownames(tb), function(g)
+  sprintf("%s %d female / %d male", g, tb[g,"Female"], tb[g,"Male"])), collapse = ", "),
+  " (n = ", sum(tb), ")")
+ovg <- ov %>% filter(!is.na(GA_weeks)); tt <- t.test(GA_weeks ~ Sex, ovg)
+ga_txt <- sprintf("female %.1f ± %.1f versus male %.1f ± %.1f weeks, P = %s",
+  mean(ovg$GA_weeks[ovg$Sex=="Female"]), sd(ovg$GA_weeks[ovg$Sex=="Female"]),
+  mean(ovg$GA_weeks[ovg$Sex=="Male"]),   sd(ovg$GA_weeks[ovg$Sex=="Male"]), pf(tt$p.value))
+cat(sprintf("Sex distribution: %s; sex was not associated with gestational age group (χ² P = %s) or with gestational age (%s).\n\n",
+            balance, pf(suppressWarnings(chisq.test(tb))$p.value), ga_txt))
+cat("Abbreviations: CI, confidence interval; EP, extremely preterm; GA, gestational age at birth; ICV, intracranial volume; LP, late preterm; OR, odds ratio; PMA, post-menstrual age; US, cranial ultrasound; VP, very preterm.")
+```
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

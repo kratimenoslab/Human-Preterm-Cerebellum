@@ -1,0 +1,172 @@
+---
+title: "Figure S12 (C, F, I) -- cell-cycle / proliferation markers"
+subtitle: "EGL (C) & IGL (F) RNAScope H-scores + PHH3 nuclear cluster fraction (I) vs gestational age"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+library(readxl); library(dplyr); library(tidyr); library(ggplot2)
+
+# --- Location-agnostic dataset finder (RELATIVE paths only) ---
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+
+# marker colours (IF/RNAScope channels)
+COL <- c(MCM2 = "#68BB3D", PCNA = "#DE33AB", CCNB1 = "#A4AB37", TOP2A = "#E03326")
+PHH3_COL <- "#EE6677"
+```
+
+# Overview
+
+Proliferation / cell-cycle markers in the developing cerebellum vs gestational age at birth.
+Panels **A/B** (EGL schematic + IF), **D/E** (IGL), **G/H** (PC) are microscopy assets — not generated here.
+
+| Panel | Layer | Markers | Metric |
+|-------|-------|---------|--------|
+| **C** | EGL | MCM2, PCNA, CCNB1, TOP2A | RNAScope H-score (mean ± SEM), Spearman r |
+| **F** | IGL | MCM2, CCNB1, TOP2A | RNAScope H-score (mean ± SEM), Spearman r |
+| **I** | PC | PHH3 | nuclear cluster fraction (subject-level), linear fit |
+
+# Panels C & F -- RNAScope H-scores (EGL, IGL)
+
+```{r hscore-data}
+hscore <- read_excel(find_dataset("Dataset_RNAScope.xlsx"), sheet = "H_Score_ROI_S9")
+
+# single-marker: jittered ROI points + mean±SEM errorbar/line, Spearman r (top-left)
+build_hscore <- function(dat, gene_name, cell, col) {
+ pd <- dat %>% filter(Gene == gene_name, Cell_Type == cell)
+ rd <- pd %>% group_by(GA) %>%
+ summarise(mean_H = mean(H_score, na.rm = TRUE),
+ se_H = sd(H_score, na.rm = TRUE) / sqrt(n()), .groups = "drop") %>%
+ mutate(lo = pmax(mean_H - se_H, 0), hi = mean_H + se_H)
+ sp <- suppressWarnings(cor.test(pd$GA, pd$H_score, method = "spearman", exact = FALSE))
+ ggplot() +
+ geom_jitter(data = pd, aes(GA, H_score), color = col, size = 1.5, alpha = 0.4, width = 0.3) +
+ geom_errorbar(data = rd, aes(GA, ymin = lo, ymax = hi), color = col, width = 1.5, linewidth = 0.6) +
+ geom_line(data = rd, aes(GA, mean_H), color = col, linewidth = 0.8) +
+ geom_point(data = rd, aes(GA, mean_H), color = col, size = 2.5) +
+ annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.4,
+ label = sprintf("r = %+.2f", sp$estimate), size = 2.9, color = "grey30", fontface = "italic") +
+ scale_x_continuous(breaks = c(23, 28, 34.7, 40), labels = c("23", "28", "34.7", "40")) +
+ labs(title = gene_name, x = "Gestational age at birth (weeks)", y = "H-score") +
+ theme_classic(base_size = 11) +
+ theme(plot.title = element_text(size = 11, hjust = 0.5),
+ axis.title = element_text(size = 9), axis.text = element_text(size = 8))
+}
+save_panel <- function(p, stem, w = 3.4, h = 3.1) {
+ ggsave(paste0(stem, ".pdf"), p, width = w, height = h, device = cairo_pdf, bg = "white")
+}
+```
+
+## Panel C -- EGL (MCM2, PCNA, CCNB1, TOP2A)
+
+```{r panelC, fig.width=3.4, fig.height=3.1}
+egl <- c("MCM2", "PCNA", "CCNB1", "TOP2A")
+for (i in seq_along(egl)) {
+ p <- build_hscore(hscore, egl[i], "EGL", COL[[egl[i]]])
+ print(p); save_panel(p, sprintf("Figure_S12C-%d_%s_EGL", i, egl[i]))
+}
+```
+
+## Panel F -- IGL (MCM2, CCNB1, TOP2A)
+
+```{r panelF, fig.width=3.4, fig.height=3.1}
+igl <- c("MCM2", "CCNB1", "TOP2A")
+for (i in seq_along(igl)) {
+ p <- build_hscore(hscore, igl[i], "IGL", COL[[igl[i]]])
+ print(p); save_panel(p, sprintf("Figure_S12F-%d_%s_IGL", i, igl[i]))
+}
+```
+
+# Panel I -- PHH3 nuclear cluster fraction (PC)
+
+```{r phh3-pipeline}
+df <- read_excel(find_dataset("Dataset_Immunofluorescence.xlsx"), sheet = "CyclinB_PH3_Cell_Level")
+
+# Step 1: drop all-NaN PHH3 rows; 3-MAD outlier on detection events
+key_cols <- c("PH3_Num_spots_estimated", "PH3_Num_single_spots", "PH3_Num_clusters")
+df <- df %>% filter(rowSums(!is.na(select(., all_of(key_cols)))) > 0)
+mad_flag <- function(x) {
+ ok <- !is.na(x); out <- rep(FALSE, length(x))
+ if (sum(ok) < 3) return(out)
+ m <- median(x[ok]); s <- mad(x[ok]); if (s == 0) return(out)
+ out[ok] <- abs(x[ok] - m) > 3 * s; out
+}
+df <- df %>% mutate(det_events = PH3_Num_single_spots + PH3_Num_clusters,
+ outlier = mad_flag(det_events)) %>%
+ filter(!outlier)
+
+# Step 2/3: nuclear cluster fraction = nuclear clusters / total nuclear puncta
+df <- df %>% mutate(Nuclear_cluster_fraction =
+ ifelse(Nuclear_puncta > 0, Nuclear_det_clusters / Nuclear_puncta, NA_real_))
+
+# aggregate: image-level then subject-level (n = 8)
+image_level <- df %>% group_by(Subject_ID, Image_Num, GA_weeks, Group) %>%
+ summarise(f = mean(Nuclear_cluster_fraction, na.rm = TRUE), .groups = "drop")
+subj <- image_level %>% group_by(Subject_ID, GA_weeks, Group) %>%
+ summarise(f = mean(f, na.rm = TRUE), .groups = "drop")
+```
+
+```{r panelI, fig.width=3.4, fig.height=3.2}
+pI <- ggplot(subj, aes(GA_weeks, f)) +
+ geom_smooth(method = "lm", se = FALSE, colour = PHH3_COL, linewidth = 0.8) +
+ geom_point(colour = PHH3_COL, size = 3) +
+ labs(title = "PHH3", x = "Gestational age at birth (weeks)", y = "Nuclear cluster fraction") +
+ theme_classic(base_size = 11) +
+ theme(plot.title = element_text(size = 11, hjust = 0.5),
+ axis.title = element_text(size = 9), axis.text = element_text(size = 8))
+print(pI)
+save_panel(pI, "Figure_S12I_PHH3_Nuclear_Cluster", w = 3.4, h = 3.2)
+```
+
+# Statistics
+
+```{r stats, echo=FALSE}
+library(knitr); library(kableExtra)
+spec <- rbind(
+ data.frame(Panel = "C", Layer = "EGL", Marker = c("MCM2","PCNA","CCNB1","TOP2A")),
+ data.frame(Panel = "F", Layer = "IGL", Marker = c("MCM2","CCNB1","TOP2A"))
+)
+spec$r <- NA_character_; spec$N_ROI <- NA_integer_
+for (i in seq_len(nrow(spec))) {
+ pd <- hscore %>% filter(Gene == spec$Marker[i], Cell_Type == spec$Layer[i])
+ sp <- suppressWarnings(cor.test(pd$GA, pd$H_score, method = "spearman", exact = FALSE))
+ spec$r[i] <- sprintf("%+.2f", sp$estimate); spec$N_ROI[i] <- nrow(pd)
+}
+ph <- cor.test(subj$GA_weeks, subj$f)
+spec <- rbind(spec, data.frame(Panel = "I", Layer = "PC", Marker = "PHH3",
+ r = sprintf("%+.2f", ph$estimate), N_ROI = nrow(subj)))
+kable(spec, caption = "Spearman r (C/F, ROI-level) and Pearson r (I, subject-level) vs GA") %>%
+ kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Provenance
+
+Source: H-score quantification (panels C/F) + PHH3 immunostaining quantification (panel I).
+Data: `Dataset_RNAScope.xlsx` sheet `H_Score_ROI_S9`; `Dataset_Immunofluorescence.xlsx` sheet `CyclinB_PH3_Cell_Level`.
+**Panel numbering (cell-cycle figure, S12):**
+panel **C = EGL**, **F = IGL**, **I = PHH3** (EGL/IGL labels corrected relative to an earlier version).
+Deck edits: x-axis "Gestational age at birth (weeks)"; annotation "r = ±X.XX" (Spearman rho, top-left); plain titles.
+Marker colours MCM2 #68BB3D / PCNA #DE33AB / CCNB1 #A4AB37 / TOP2A #E03326; PHH3 #EE6677.
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

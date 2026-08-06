@@ -1,0 +1,592 @@
+---
+title: "Figure 4 -- Cerebellar Layer Analysis"
+subtitle: "Preterm vs Term: Gestational Age and Chronological Age"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE,
+ warning = FALSE,
+ message = FALSE,
+ fig.align = "center",
+ dpi = 300,
+ results = 'asis'
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+**Figure 4 (Panels B--E)** shows cerebellar layer measurements across gestational and chronological age for preterm vs term infants. Each panel pair consists of:
+
+- **Left**: All subjects vs gestational age (single trend line)
+- **Right**: Preterm vs term separated by chronological age (separate trend lines with SE ribbons)
+
+| Panel | Layer | Measurement |
+|-------|-------|-------------|
+| **B** | EGL | External Granular Layer surface area (mm²/mm ML) |
+| **C** | ML | Molecular Layer surface area (mm²/mm ML) |
+| **D** | IGL | Internal Granular Layer surface area (mm²/mm ML) |
+| **E** | PC | Purkinje Cell density (PCs/mm ML) |
+
+# Libraries
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(gridExtra)
+library(grid)
+library(ggpubr)
+library(cowplot)
+library(ggtext)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Source Data & Methods
+
+## Data Provenance
+
+1. **Source**: Histological sections from preterm (<37 wks GA) and term (≥37 wks GA) cerebellar tissue
+2. **Quantification**: Deep learning-based layer segmentation from H&E-stained WSIs
+3. **Normalization**: Layer areas normalized to molecular layer length; PC density per mm ML
+4. **Input file**: `Datasets/Dataset_Cerebellar_Layers.xlsx`, sheet = "Cerebellar_Layers"
+
+## Data Loading
+
+```{r load-data, include=FALSE}
+data <- read_excel(find_dataset(c("Dataset_Cerebellar_Layers.xlsx")), sheet = "Cerebellar_Layers")
+
+data <- data %>%
+ mutate(Group = factor(Group, levels = c("Preterm", "Term")))
+
+n_total <- n_distinct(data$Subject_ID)
+n_preterm <- n_distinct(data$Subject_ID[data$Group == "Preterm"])
+n_term <- n_distinct(data$Subject_ID[data$Group == "Term"])
+```
+
+```{r data-summary-table}
+data %>%
+ group_by(Group) %>%
+ summarise(
+ `N (rows)` = n(),
+ `N (subjects)` = n_distinct(Subject_ID),
+ `GA (mean ± SD)` = sprintf("%.1f ± %.1f", mean(GA, na.rm = TRUE), sd(GA, na.rm = TRUE)),
+ `CA (mean ± SD)` = sprintf("%.1f ± %.1f", mean(Chronological_age, na.rm = TRUE), sd(Chronological_age, na.rm = TRUE)),
+ .groups = "drop"
+ ) %>%
+ kable(caption = "Sample Characteristics by Group", align = c("l", "c", "c", "c", "c")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+---
+
+# Statistical Functions
+
+```{r statistical-functions, include=FALSE}
+# Function to test slope difference between two groups
+test_slope_difference <- function(x1, y1, x2, y2) {
+ n1 <- sum(!is.na(x1) & !is.na(y1))
+ n2 <- sum(!is.na(x2) & !is.na(y2))
+
+ if (n1 < 3 || n2 < 3) {
+ return(list(
+ slope1 = NA, se1 = NA, r2_1 = NA,
+ slope2 = NA, se2 = NA, r2_2 = NA,
+ slope_diff = NA, se_diff = NA,
+ t_stat = NA, df = NA, p_value = NA
+ ))
+ }
+
+ valid1 <- !is.na(x1) & !is.na(y1)
+ valid2 <- !is.na(x2) & !is.na(y2)
+ x1 <- x1[valid1]; y1 <- y1[valid1]
+ x2 <- x2[valid2]; y2 <- y2[valid2]
+
+ model1 <- lm(y1 ~ x1)
+ slope1 <- coef(model1)[2]
+ se1 <- summary(model1)$coefficients[2, 2]
+ r2_1 <- summary(model1)$r.squared
+
+ model2 <- lm(y2 ~ x2)
+ slope2 <- coef(model2)[2]
+ se2 <- summary(model2)$coefficients[2, 2]
+ r2_2 <- summary(model2)$r.squared
+
+ slope_diff <- slope1 - slope2
+ se_diff <- sqrt(se1^2 + se2^2)
+ t_stat <- slope_diff / se_diff
+ df <- n1 + n2 - 4
+ p_value <- 2 * pt(abs(t_stat), df, lower.tail = FALSE)
+
+ list(
+ slope1 = slope1, se1 = se1, r2_1 = r2_1,
+ slope2 = slope2, se2 = se2, r2_2 = r2_2,
+ slope_diff = slope_diff, se_diff = se_diff,
+ t_stat = t_stat, df = df, p_value = p_value
+ )
+}
+
+# Function for mean difference test
+test_mean_difference <- function(y1, y2) {
+ y1 <- y1[!is.na(y1)]
+ y2 <- y2[!is.na(y2)]
+ if (length(y1) < 2 || length(y2) < 2) {
+ return(list(p_value = NA, t_stat = NA, mean1 = NA, mean2 = NA))
+ }
+ test_result <- t.test(y1, y2)
+ list(
+ p_value = test_result$p.value,
+ t_stat = test_result$statistic,
+ mean1 = mean(y1),
+ mean2 = mean(y2),
+ sd1 = sd(y1),
+ sd2 = sd(y2)
+ )
+}
+
+# Format p-value for display (uppercase P, AAAS style)
+format_pvalue <- function(p, digits = 3) {
+ sapply(p, function(pval) {
+ if (is.na(pval)) return("NA")
+ if (pval < 0.001) return("P < 0.001***")
+ if (pval < 0.01) return(paste0("P = ", format(round(pval, digits), nsmall = digits), "**"))
+ if (pval < 0.05) return(paste0("P = ", format(round(pval, digits), nsmall = digits), "*"))
+ paste0("P = ", format(round(pval, digits), nsmall = digits))
+ })
+}
+```
+
+---
+
+# Figure 4 -- Cerebellar Layer Analysis (Panels B--E)
+
+```{r create-figure, fig.width=12, fig.height=8.5, echo=FALSE}
+# ============================================================
+# COLORS
+# ============================================================
+color_preterm <- "#030403" # black preterm points (' updated palette 2026-08)
+color_term <- "#DE1567" # crimson term points
+line_preterm <- "#030403" # black preterm trend line
+line_term <- "#DE1567" # crimson term trend line
+
+# Line and point settings
+line_thickness <- 0.8
+point_size <- 2.0
+point_alpha <- 1
+
+# ============================================================
+# PANEL CREATION FUNCTION
+# ============================================================
+create_panel_pair <- function(data, measurement_col, y_lab) {
+
+ df <- data %>%
+ filter(!is.na(.data[[measurement_col]]), !is.na(GA), !is.na(Chronological_age))
+
+ if (nrow(df) < 10) return(NULL)
+
+ preterm_df <- df %>% filter(Group == "Preterm")
+ term_df <- df %>% filter(Group == "Term")
+
+ slope_test <- test_slope_difference(
+ preterm_df$Chronological_age, preterm_df[[measurement_col]],
+ term_df$Chronological_age, term_df[[measurement_col]]
+ )
+
+ # Individual slope coefficients, SE, CI, and p-values (CA)
+ model_preterm_ca <- lm(preterm_df[[measurement_col]] ~ preterm_df$Chronological_age)
+ model_term_ca <- lm(term_df[[measurement_col]] ~ term_df$Chronological_age)
+ s_preterm <- summary(model_preterm_ca)$coefficients
+ s_term <- summary(model_term_ca)$coefficients
+ slope_preterm_ca <- s_preterm[2, 1]
+ se_preterm_ca <- s_preterm[2, 2]
+ p_slope_preterm_ca <- s_preterm[2, 4]
+ ci_lo_preterm <- slope_preterm_ca - 1.96 * se_preterm_ca
+ ci_hi_preterm <- slope_preterm_ca + 1.96 * se_preterm_ca
+ slope_term_ca <- s_term[2, 1]
+ se_term_ca <- s_term[2, 2]
+ p_slope_term_ca <- s_term[2, 4]
+ ci_lo_term <- slope_term_ca - 1.96 * se_term_ca
+ ci_hi_term <- slope_term_ca + 1.96 * se_term_ca
+
+ # Overall slope p-value (GA, all subjects)
+ model_all_ga <- lm(df[[measurement_col]] ~ df$GA)
+ p_slope_all_ga <- summary(model_all_ga)$coefficients[2, 4]
+
+ y_min <- min(df[[measurement_col]], na.rm = TRUE)
+ y_max <- max(df[[measurement_col]], na.rm = TRUE)
+ y_range <- y_max - y_min
+ y_limits <- c(y_min - y_range * 0.08, y_max + y_range * 0.22)
+
+ # P-value formatters (uppercase P, AAAS style)
+ fmt_p <- function(p) {
+ if (is.na(p)) return("italic(P) == 'NA'")
+ if (p < 0.001) return("italic(P) < \"0.001\"")
+ paste0('italic(P) == "', sprintf("%.3f", p), '"')
+ }
+
+ fmt_p_beta <- function(p) {
+ if (is.na(p)) return("italic(P) == 'NA'")
+ if (p < 0.0001) return("italic(P) < \"0.0001\"")
+ if (p < 0.001) return("italic(P) < \"0.001\"")
+ paste0('italic(P) == "', sprintf("%.3f", p), '"')
+ }
+
+ # ========================================
+ # LEFT PANEL: GA vs Measurement
+ # ========================================
+ # Fit one OLS across all subjects, then split the line display at GA = 37
+ # so the preterm portion is red and the term portion is blue. The CI ribbon
+ # remains a single ribbon derived from the overall fit.
+ fit_df <- data.frame(GA = df$GA, y = df[[measurement_col]])
+ fit_all <- lm(y ~ GA, data = fit_df)
+ ga_seq <- seq(min(df$GA), max(df$GA), length.out = 200)
+ pred_all <- predict(fit_all, newdata = data.frame(GA = ga_seq),
+ interval = "confidence")
+ pred_df <- data.frame(GA = ga_seq,
+ fit = pred_all[, "fit"],
+ lwr = pred_all[, "lwr"],
+ upr = pred_all[, "upr"],
+ Segment = ifelse(ga_seq < 37, "Preterm", "Term"))
+
+ p_ga <- ggplot(df, aes(x = GA, y = .data[[measurement_col]], color = Group)) +
+ geom_point(size = point_size, alpha = point_alpha) +
+ geom_ribbon(data = pred_df, inherit.aes = FALSE,
+ aes(x = GA, ymin = lwr, ymax = upr),
+ fill = "gray60", alpha = 0.15) +
+ geom_line(data = pred_df, inherit.aes = FALSE,
+ aes(x = GA, y = fit),
+ color = "gray30", linewidth = line_thickness) +
+ geom_vline(xintercept = 37, linetype = "dashed", color = "gray70", linewidth = 0.5) +
+ scale_color_manual(values = c("Preterm" = color_preterm, "Term" = color_term)) +
+ scale_x_continuous(limits = c(20, 45), breaks = seq(20, 45, 5)) +
+ scale_y_continuous(limits = y_limits) +
+ labs(x = "Gestational age at birth (weeks)", y = y_lab) +
+ theme_bw(base_size = 10) +
+ theme(
+ panel.grid.major = element_blank(),
+ panel.grid.minor = element_blank(),
+ panel.border = element_rect(color = "gray30", linewidth = 0.5),
+ axis.title.x = element_text(size = 9, color = "gray30"),
+ axis.title.y = element_text(size = 9, color = "gray30"),
+ axis.text = element_text(size = 8, color = "gray30"),
+ legend.position = "none",
+ plot.margin = margin(8, 4, 4, 4)
+ ) +
+ annotate("text", parse = TRUE, x = 44, y = y_max + y_range * 0.16,
+ label = paste0('"Slope"~~', fmt_p(p_slope_all_ga)),
+ hjust = 1, size = 2.7, color = "gray30")
+
+ # ========================================
+ # RIGHT PANEL: CA vs Measurement
+ # ========================================
+ p_val <- slope_test$p_value
+ p_label <- fmt_p(p_val)
+
+ # --- Text placement: tight top-right corner ---
+ txt_x <- 60; txt_hjust <- 1
+ txt_y1 <- y_max + y_range * 0.22
+ txt_y2 <- y_max + y_range * 0.15
+ txt_y3 <- y_max + y_range * 0.08
+
+ p_ca <- ggplot(df, aes(x = Chronological_age, y = .data[[measurement_col]])) +
+ geom_point(aes(color = Group), size = point_size, alpha = point_alpha) +
+ # Separate trend lines per group with SE ribbons
+ geom_smooth(data = preterm_df, aes(x = Chronological_age, y = .data[[measurement_col]]),
+ method = "lm", se = TRUE, color = line_preterm,
+ fill = line_preterm, alpha = 0.15,
+ linetype = "solid", linewidth = line_thickness) +
+ geom_smooth(data = term_df, aes(x = Chronological_age, y = .data[[measurement_col]]),
+ method = "lm", se = TRUE, color = line_term,
+ fill = line_term, alpha = 0.15,
+ linetype = "solid", linewidth = line_thickness) +
+ scale_color_manual(values = c("Preterm" = color_preterm, "Term" = color_term)) +
+ scale_x_continuous(limits = c(0, 60), breaks = seq(0, 60, 10)) +
+ scale_y_continuous(limits = y_limits) +
+ labs(x = "Chronological age (weeks)", y = y_lab) +
+ theme_bw(base_size = 10) +
+ theme(
+ panel.grid.major = element_blank(),
+ panel.grid.minor = element_blank(),
+ panel.border = element_rect(color = "gray30", linewidth = 0.5),
+ axis.title.x = element_text(size = 9, color = "gray30"),
+ axis.title.y = element_text(size = 9, color = "gray30"),
+ axis.text = element_text(size = 8, color = "gray30"),
+ legend.position = "none",
+ plot.margin = margin(8, 4, 4, 4)
+ ) +
+ annotate("text", parse = TRUE, x = txt_x, y = txt_y1,
+ label = paste0('"Slope"~~', p_label),
+ hjust = txt_hjust, size = 2.7, color = "gray30") +
+ annotate("text", parse = TRUE, x = txt_x, y = txt_y2,
+ label = paste0("paste('Preterm: ', italic(beta), ' = ",
+ sprintf("%.2f", slope_preterm_ca),
+ " [", sprintf("%.2f", ci_lo_preterm), "\u2013", sprintf("%.2f", ci_hi_preterm), "], ', ",
+ fmt_p_beta(p_slope_preterm_ca), ")"),
+ hjust = txt_hjust, size = 2.7, color = line_preterm) +
+ annotate("text", parse = TRUE, x = txt_x, y = txt_y3,
+ label = paste0("paste('Term: ', italic(beta), ' = ",
+ sprintf("%.2f", slope_term_ca),
+ " [", sprintf("%.2f", ci_lo_term), "\u2013", sprintf("%.2f", ci_hi_term), "], ', ",
+ fmt_p_beta(p_slope_term_ca), ")"),
+ hjust = txt_hjust, size = 2.7, color = line_term)
+
+ list(p_ga = p_ga, p_ca = p_ca, stats = slope_test)
+}
+
+# ============================================================
+# COLORED HEADER STRIPS
+# ============================================================
+create_header <- function(title, bg_color, text_color = "white") {
+ ggplot() + theme_void() +
+ annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1, fill = bg_color, color = NA) +
+ annotate("text", x = 0.5, y = 0.5, label = title, color = text_color, size = 4.5, fontface = "plain") +
+ coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE)
+}
+
+create_label <- function(label_text) {
+ ggplot() + theme_void() +
+ annotate("text", x = 0.5, y = 0.5, label = label_text, size = 5, fontface = "bold", color = "black") +
+ coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE)
+}
+
+# EGL and IGL header bars in neutral gray (#CBCED6) per request; ML and PC keep
+# their original colors. Gray bars use black text for legibility.
+header_egl <- create_header("EGL", "#CBCED6", text_color = "black")
+header_ml <- create_header("ML", "#CBCED6", text_color = "black")
+header_igl <- create_header("IGL", "#CBCED6", text_color = "black")
+header_pc <- create_header("PC", "#CBCED6", text_color = "black")
+
+label_b <- create_label("")
+label_c <- create_label("")
+label_d <- create_label("")
+label_e <- create_label("")
+
+# ============================================================
+# CREATE ALL PANELS
+# ============================================================
+egl_panels <- create_panel_pair(data, "EGL_normalized",
+ expression(EGL~surface~area~(mm^2/mu*m~ML)))
+ml_panels <- create_panel_pair(data, "IGL_normalized", # deck ML = dataset IGL_normalized (flat)
+ expression(ML~surface~area~(mm^2/mu*m~ML)))
+igl_panels <- create_panel_pair(data, "ML_normalized", # deck IGL = dataset ML_normalized (strong growth)
+ expression(IGL~surface~area~(mm^2/mu*m~ML)))
+pc_panels <- create_panel_pair(data, "PC_count",
+ expression(PC~Density~(PCs/mm~ML)))
+
+# ============================================================
+# COMMON LEGEND
+# ============================================================
+dummy_legend <- ggplot(data.frame(x = 1:2, y = 1:2,
+ Group = factor(c("Preterm", "Term"),
+ levels = c("Preterm", "Term"))),
+ aes(x, y, color = Group)) +
+ geom_point(size = 3, shape = 16) +
+ scale_color_manual(values = c("Preterm" = color_preterm, "Term" = color_term)) +
+ guides(color = guide_legend(override.aes = list(shape = 16, size = 3))) +
+ theme(legend.position = "bottom",
+ legend.title = element_blank(),
+ legend.text = element_text(size = 9),
+ legend.key.size = unit(0.4, "cm"))
+
+shared_legend <- cowplot::get_legend(dummy_legend)
+
+# ============================================================
+# ARRANGE FINAL FIGURE
+# ============================================================
+create_full_panel <- function(label, header, p_ga, p_ca) {
+ header_row <- ggarrange(label, header, ncol = 2, widths = c(0.04, 0.96))
+ plots_row <- ggarrange(p_ga, p_ca, ncol = 2, widths = c(1, 1))
+ ggarrange(header_row, plots_row, nrow = 2, heights = c(0.055, 1))
+}
+
+panel_b <- create_full_panel(label_b, header_egl, egl_panels$p_ga, egl_panels$p_ca)
+panel_c <- create_full_panel(label_c, header_ml, ml_panels$p_ga, ml_panels$p_ca)
+panel_d <- create_full_panel(label_d, header_igl, igl_panels$p_ga, igl_panels$p_ca)
+panel_e <- create_full_panel(label_e, header_pc, pc_panels$p_ga, pc_panels$p_ca)
+
+panels_grid <- ggarrange(panel_b, panel_d, panel_c, panel_e,
+ ncol = 2, nrow = 2)
+
+final_figure <- ggarrange(panels_grid, shared_legend,
+ nrow = 2, heights = c(1, 0.04))
+
+print(final_figure)
+```
+
+```{r save-figure, include=FALSE}
+ggsave("Figure_3_Cerebellar_Layers.pdf",
+ final_figure, width = 12, height = 8.5, units = "in", dpi = 300)
+```
+
+---
+
+# Statistical Results Summary
+
+```{r calculate-all-stats, include=FALSE}
+measurements <- list(
+ EGL = list(col = "EGL_normalized", label = "EGL (External Granular Layer)"),
+ ML = list(col = "ML_normalized", label = "ML (Molecular Layer)"),
+ IGL = list(col = "IGL_normalized", label = "IGL (Internal Granular Layer)"),
+ PC = list(col = "PC_count", label = "PC (Purkinje Cell Density)")
+)
+
+all_results <- lapply(names(measurements), function(name) {
+ m <- measurements[[name]]
+ df <- data %>% filter(!is.na(.data[[m$col]]), !is.na(GA), !is.na(Chronological_age))
+ preterm_df <- df %>% filter(Group == "Preterm")
+ term_df <- df %>% filter(Group == "Term")
+
+ mean_test <- test_mean_difference(preterm_df[[m$col]], term_df[[m$col]])
+ slope_test <- test_slope_difference(
+ preterm_df$Chronological_age, preterm_df[[m$col]],
+ term_df$Chronological_age, term_df[[m$col]]
+ )
+
+ tibble(
+ Layer = name,
+ `N Total` = nrow(df),
+ `N Preterm` = nrow(preterm_df),
+ `N Term` = nrow(term_df),
+ `Preterm Mean` = mean_test$mean1,
+ `Preterm SD` = mean_test$sd1,
+ `Term Mean` = mean_test$mean2,
+ `Term SD` = mean_test$sd2,
+ `Mean Diff p` = mean_test$p_value,
+ `Preterm Slope` = slope_test$slope1,
+ `Preterm SE` = slope_test$se1,
+ `Term Slope` = slope_test$slope2,
+ `Term SE` = slope_test$se2,
+ `Slope Diff p` = slope_test$p_value
+ )
+})
+
+results_table <- bind_rows(all_results)
+```
+
+## Descriptive Statistics
+
+```{r desc-stats-table}
+results_table %>%
+ transmute(
+ Layer,
+ `N Total`,
+ `N Preterm`,
+ `N Term`,
+ `Preterm (Mean ± SD)` = sprintf("%.2f ± %.2f", `Preterm Mean`, `Preterm SD`),
+ `Term (Mean ± SD)` = sprintf("%.2f ± %.2f", `Term Mean`, `Term SD`)
+ ) %>%
+ kable(caption = "Descriptive Statistics by Cerebellar Layer and Group", align = c("l", "c", "c", "c", "c", "c")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+ add_header_above(c(" " = 1, "Sample Size" = 3, "Measurements" = 2))
+```
+
+## Statistical Tests
+
+```{r stat-test-table}
+results_table %>%
+ transmute(
+ Layer,
+ `Mean Diff (P)` = format_pvalue(`Mean Diff p`),
+ `Preterm Slope (SE)` = sprintf("%.4f (%.4f)", `Preterm Slope`, `Preterm SE`),
+ `Term Slope (SE)` = sprintf("%.4f (%.4f)", `Term Slope`, `Term SE`),
+ `Slope Diff (P)` = format_pvalue(`Slope Diff p`)
+ ) %>%
+ kable(caption = "Statistical Test Results: Mean Difference and Slope Difference Tests", align = c("l", "c", "c", "c", "c")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+ add_header_above(c(" " = 1, "t-test" = 1, "Regression Slopes (per week)" = 2, "Trend Comparison" = 1))
+```
+
+## Pooled Regression vs. Gestational Age (GA)
+
+For each cerebellar layer, the table below reports the **overall pooled OLS regression** of the layer measurement against **gestational age** (preterm + term combined; corresponds to the trend line shown in the left-hand panels of Figure 4 B/D/F/H). β is the slope per GA week, and 95% CI is the confidence interval on that slope.
+
+```{r pooled-ga-regression}
+pooled_ga_rows <- lapply(names(measurements), function(name) {
+ m <- measurements[[name]]
+ df <- data %>% filter(!is.na(.data[[m$col]]), !is.na(GA))
+ fit <- lm(df[[m$col]] ~ df$GA)
+ s <- summary(fit)$coefficients
+ ci <- confint(fit)
+ beta <- s["df$GA", "Estimate"]
+ se <- s["df$GA", "Std. Error"]
+ pval <- s["df$GA", "Pr(>|t|)"]
+ tibble(
+ Layer = name,
+ `N` = nrow(df),
+ `beta (per GA week)` = sprintf("%.3f", beta),
+ `SE` = sprintf("%.3f", se),
+ `95% CI` = sprintf("[%.3f, %.3f]", ci["df$GA", 1], ci["df$GA", 2]),
+ `P` = format_pvalue(pval)
+ )
+})
+
+bind_rows(pooled_ga_rows) %>%
+ kable(caption = "Figure 4 (panels B/D/F/H): pooled OLS regression of each cerebellar layer on gestational age.",
+ align = c("l","c","c","c","c","c")) %>%
+ kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+The ML row corresponds to Figure 4F (Molecular Layer vs. Gestational Age).
+
+---
+
+# Conclusions
+
+```{r conclusions, results='asis'}
+# Generate conclusions dynamically from computed results
+fmt_concl_p <- function(p) {
+ if (is.na(p)) return("NA")
+ if (p < 0.001) return("P < 0.001")
+ sprintf("P = %.3f", p)
+}
+
+for (i in seq_len(nrow(results_table))) {
+ layer <- results_table$Layer[i]
+ mean_p <- fmt_concl_p(results_table$`Mean Diff p`[i])
+ slope_p <- fmt_concl_p(results_table$`Slope Diff p`[i])
+
+ sig_mean <- !is.na(results_table$`Mean Diff p`[i]) & results_table$`Mean Diff p`[i] < 0.05
+ sig_slope <- !is.na(results_table$`Slope Diff p`[i]) & results_table$`Slope Diff p`[i] < 0.05
+
+ mean_text <- if (sig_mean) "significantly different" else "not significantly different"
+ slope_text <- if (sig_slope) {
+ "a **significant difference in developmental trajectories**"
+ } else {
+ "similar developmental trajectories between groups"
+ }
+
+ cat(sprintf("%d. **%s**: Mean layer measurement is %s between Preterm and Term (%s), with %s (slope difference %s).\n\n",
+ i, layer, mean_text, mean_p, slope_text, slope_p))
+}
+```
+
+---
+
+# Session Info
+
+```{r session-info, echo=FALSE}
+sessionInfo()
+```

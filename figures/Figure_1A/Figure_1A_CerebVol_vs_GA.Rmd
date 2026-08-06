@@ -1,0 +1,442 @@
+---
+title: "Figure 1A: Cerebellar Volume vs Gestational Age"
+subtitle: "PMA-Adjusted Linear Regression (Volumetric MRI Cohort, N = 120)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 3.2, fig.height = 4.5, dpi = 300
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+# Data lives in Figures_V2_Final/Supplementary_Datasets/ (git-ignored, kept off GitHub). This
+# returns a RELATIVE path by walking up to find a "Supplementary_Datasets/" folder, so no
+# machine-specific / user path is ever embedded in the code or rendered HTML.
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) {
+ rel <- file.path(prefix, subdir, nm)
+ if (file.exists(rel)) return(rel)
+ }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Data Loading and Exclusion Flow
+
+## Cohort Derivation
+
+The volumetric MRI analytic cohort (N = 120) was derived from the full enrolled sample through the following steps:
+
+```{r exclusion_flow}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(sandwich)
+library(lmtest)
+library(car)
+library(knitr)
+library(kableExtra)
+
+# Exclusion flow table
+excl_flow <- data.frame(
+ Step = c(
+ "MRI scans after quality review",
+ "Subjects with automated cerebellar 3D segmentation",
+ "Exclusions from segmented cohort",
+ "",
+ "",
+ "",
+ "IQR volume outlier screening (k = 3)",
+ "**Final volumetric MRI cohort**"
+ ),
+ Detail = c(
+ "",
+ "57 subjects lacked automated cerebellar segmentation (Label 6)",
+ "ID 469 (GA=33.8, LP): Scan timing -- scanned ~2 days post-birth (PMA 34.1 wk), not TEA",
+ "ID 57 (GA=28.0, VP): Scan timing -- scanned 20 wk post-birth (PMA 48.0 wk), outside TEA window",
+ "ID 104 (GA=26.4, EP): PMA data-entry error -- MRI_CA=480 wk, computed PMA=56.4 wk",
+ "",
+ "No additional subjects excluded (all within fences)",
+ ""
+ ),
+ N = c("N = 180", "N = 123", "-1", "-1", "-1", "", "-0", "**N = 120**"),
+ stringsAsFactors = FALSE
+)
+
+# Display merged exclusion info per step
+kable(excl_flow,
+ caption = "Exclusion Flow: Volumetric MRI Cohort",
+ col.names = c("Step", "Detail", "N")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+ row_spec(8, bold = TRUE, background = "#f0f7fb")
+```
+
+**GA Group Definitions:**
+
+| Group | Label | GA Range |
+|-------|-------|----------|
+| EP | Extremely Preterm | < 28 weeks |
+| VP | Very Preterm | 28 to < 32 weeks |
+| LP | Late Preterm | >= 32 weeks |
+
+**Data Source:** `Supplementary_Datasets/Dataset_Clinical_MRI_US_ND.xlsx`, sheet = "MRI". The sheet contains all 123 subjects with automated cerebellar 3D segmentation; 3 subjects are excluded (IDs 57, 104, 469) and marked via the `Included` and `Exclusion_Reason` columns. The code below filters to `Included == "Yes"` to obtain the analytic sample (N = 120).
+
+## Load Data
+
+```{r load_data}
+# ============================================================
+# LOAD FROM FINAL ANALYSIS DATASET — MRI sheet (volumetric)
+# Sheet contains all 123 subjects with segmentation data;
+# filter to Included == "Yes" for the analytic sample (N = 120)
+# ============================================================
+data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+df_all <- read_excel(data_file, sheet = "MRI")
+
+# Show what was excluded
+excluded <- df_all %>% filter(Included == "No")
+if (nrow(excluded) > 0) {
+ excluded %>%
+ select(Study_ID, GA_weeks, GA_Group, MRI_PMA_weeks, Exclusion_Reason) %>%
+ kable(caption = "Excluded from Volumetric MRI Analysis",
+ col.names = c("Study ID", "GA (wk)", "Group", "PMA (wk)", "Reason")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+}
+
+# Filter to included subjects only
+df <- df_all %>% filter(Included == "Yes")
+
+# Rename for convenience (matching original analysis variable names)
+df <- df %>%
+ rename(
+ GA = GA_weeks,
+ MRI_PMA = MRI_PMA_weeks,
+ MRI_CA = MRI_CA_weeks,
+ CerebVol = Cerebellar_Volume_mm3
+ ) %>%
+ mutate(
+ GA_group = factor(
+ case_when(
+ GA < 28 ~ "EP",
+ GA < 32 ~ "VP",
+ TRUE ~ "LP"
+ ),
+ levels = c("EP", "VP", "LP")
+ )
+ )
+
+# Center PMA at cohort mean
+pma_mean <- mean(df$MRI_PMA, na.rm = TRUE)
+df$PMA_c <- df$MRI_PMA - pma_mean
+
+data.frame(
+ Parameter = c("Volumetric MRI cohort", "PMA centered at"),
+ Value = c(paste("N =", nrow(df)), paste0(round(pma_mean, 1), " weeks"))
+) %>%
+ kable(col.names = c("", ""), caption = "Analysis Parameters") %>%
+ kable_styling(bootstrap_options = c("condensed"), full_width = FALSE)
+
+# Color scheme (' updated palette 2026-08 — eyedropper from PowerPoint)
+ga_colors <- c(
+ "EP" = "#030403", # near-black
+ "VP" = "#DE1567", # crimson/magenta
+ "LP" = "#7BACDC" # light blue
+)
+
+ga_labels <- c(
+ "EP" = "EP",
+ "VP" = "VP",
+ "LP" = "LP"
+)
+
+# Cohort table
+df %>%
+ group_by(GA_group) %>%
+ summarise(
+ n = n(),
+ GA_mean = sprintf("%.1f (%.1f)", mean(GA), sd(GA)),
+ PMA_mean = sprintf("%.1f (%.1f)", mean(MRI_PMA), sd(MRI_PMA)),
+ CerebVol_mean = sprintf("%s (%s)",
+ formatC(round(mean(CerebVol)), format = "d", big.mark = ","),
+ formatC(round(sd(CerebVol)), format = "d", big.mark = ",")),
+ .groups = "drop"
+ ) %>%
+ kable(caption = "Volumetric MRI Cohort",
+ col.names = c("GA Group", "n", "GA (wk)", "PMA at MRI (wk)", "Cerebellar Volume (mm³)")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Sex as Covariate Check
+
+```{r sex_check}
+model_with_sex <- lm(CerebVol ~ PMA_c + GA + Sex, data = df)
+sex_summary <- summary(model_with_sex)
+sex_p <- sex_summary$coefficients["SexM", "Pr(>|t|)"]
+sex_beta <- round(coef(model_with_sex)["SexM"], 1)
+
+data.frame(
+ Covariate = "Sex (Male vs Female)",
+ Coefficient = paste0(sex_beta, " mm³"),
+ `p-value` = round(sex_p, 3),
+ Decision = ifelse(sex_p < 0.05, "Include in primary model",
+ "Exclude (non-significant)"),
+ check.names = FALSE
+) %>%
+ kable(caption = "Sex as potential covariate") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Primary Model: CerebVol ~ PMA_c + GA
+
+```{r primary_model}
+model_primary <- lm(CerebVol ~ PMA_c + GA, data = df)
+model_summary <- summary(model_primary)
+
+# HC3 robust standard errors
+robust_se <- sqrt(diag(vcovHC(model_primary, type = "HC3")))
+robust_t <- coef(model_primary) / robust_se
+robust_p <- 2 * pt(abs(robust_t), df = model_primary$df.residual, lower.tail = FALSE)
+
+# Coefficient table
+coef_tbl <- as.data.frame(coef(model_summary))
+results_df <- data.frame(
+ Variable = c("Intercept", "PMA at MRI (centered)", "GA at birth"),
+ Coefficient = round(coef(model_primary), 0),
+ SE = round(coef_tbl$`Std. Error`, 0),
+ `p-value` = ifelse(coef_tbl$`Pr(>|t|)` < 0.001, "< 0.001",
+ round(coef_tbl$`Pr(>|t|)`, 3)),
+ `p (HC3)` = ifelse(robust_p < 0.001, "< 0.001", round(robust_p, 3)),
+ check.names = FALSE
+)
+
+kable(results_df,
+ caption = paste0("Primary Model Results (R² = ",
+ round(model_summary$r.squared, 3),
+ ", Adj R² = ",
+ round(model_summary$adj.r.squared, 3), ")")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Effect Sizes
+
+```{r effect_sizes}
+# Partial r for GA (after controlling for PMA)
+t_GA <- coef(model_summary)["GA", "t value"]
+partial_r_GA <- t_GA / sqrt(t_GA^2 + model_primary$df.residual)
+
+# Cohen's f² for GA
+model_reduced <- lm(CerebVol ~ PMA_c, data = df)
+r2_full <- model_summary$r.squared
+r2_reduced <- summary(model_reduced)$r.squared
+f2_GA <- (r2_full - r2_reduced) / (1 - r2_full)
+
+es_tbl <- data.frame(
+ Metric = c("Partial r (GA | PMA)",
+ "Cohen's f² (GA)",
+ "Effect interpretation",
+ "R² (full model)",
+ "R² (PMA only)",
+ "Incremental R² from GA"),
+ Value = c(round(partial_r_GA, 2),
+ round(f2_GA, 3),
+ ifelse(f2_GA >= 0.35, "Large",
+ ifelse(f2_GA >= 0.15, "Medium",
+ ifelse(f2_GA >= 0.02, "Small", "Negligible"))),
+ round(r2_full, 3),
+ round(r2_reduced, 3),
+ round(r2_full - r2_reduced, 3))
+)
+
+kable(es_tbl, caption = "Effect Sizes", col.names = c("Metric", "Value")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Model Diagnostics
+
+```{r diagnostics}
+shapiro_test <- shapiro.test(residuals(model_primary))
+bp_test <- bptest(model_primary)
+vif_vals <- vif(model_primary)
+
+diag_df <- data.frame(
+ Test = c("Shapiro-Wilk (normality)", "Breusch-Pagan (homoscedasticity)",
+ "VIF: PMA_c", "VIF: GA"),
+ Statistic = c(round(shapiro_test$statistic, 3), round(bp_test$statistic, 2),
+ round(vif_vals["PMA_c"], 2), round(vif_vals["GA"], 2)),
+ `p-value` = c(round(shapiro_test$p.value, 3), round(bp_test$p.value, 3), "—", "—"),
+ check.names = FALSE
+)
+
+kable(diag_df, caption = "Model Diagnostics") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Sensitivity Analysis (Cook's Distance)
+
+```{r sensitivity}
+cooks_d <- cooks.distance(model_primary)
+threshold <- 4 / nrow(df)
+n_influential <- sum(cooks_d > threshold)
+
+df_sens <- df[cooks_d <= threshold, ]
+model_sensitivity <- lm(CerebVol ~ PMA_c + GA, data = df_sens)
+sens_summary <- summary(model_sensitivity)
+
+sens_df <- data.frame(
+ Model = c("Primary", "Sensitivity (excl. influential)"),
+ n = c(nrow(df), nrow(df_sens)),
+ `GA Coefficient` = c(round(coef(model_primary)["GA"], 0),
+ round(coef(model_sensitivity)["GA"], 0)),
+ `GA p-value` = c(
+ ifelse(coef(model_summary)["GA", "Pr(>|t|)"] < 0.001, "< 0.001",
+ round(coef(model_summary)["GA", "Pr(>|t|)"], 3)),
+ ifelse(sens_summary$coefficients["GA", "Pr(>|t|)"] < 0.001, "< 0.001",
+ round(sens_summary$coefficients["GA", "Pr(>|t|)"], 3))),
+ R_squared = c(round(model_summary$r.squared, 3), round(sens_summary$r.squared, 3)),
+ check.names = FALSE
+)
+
+kable(sens_df, caption = paste0("Sensitivity Analysis (Cook's D threshold = ",
+ round(threshold, 4), "; ",
+ n_influential, " influential observations)")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Figure 1B
+
+```{r figure_1b, fig.width=3.2, fig.height=4.5}
+# ============================================================
+# FIGURE 1B: Cerebellar Volume vs GA at Birth
+# Model: CerebVol ~ PMA_c + GA
+# Regression line: predicted at mean PMA (PMA_c = 0)
+# ============================================================
+
+beta_ga <- coef(model_primary)["GA"]
+
+# Predicted line at mean PMA
+ga_seq <- seq(min(df$GA), max(df$GA), length.out = 100)
+pred_df <- data.frame(GA = ga_seq, PMA_c = 0)
+pred_ci <- predict(model_primary, newdata = pred_df, interval = "confidence")
+pred_df$pred <- pred_ci[, "fit"]
+pred_df$lwr <- pred_ci[, "lwr"]
+pred_df$upr <- pred_ci[, "upr"]
+
+# Annotation values
+partial_r <- round(partial_r_GA, 2)
+p_val <- coef(model_summary)["GA", "Pr(>|t|)"]
+p_display <- ifelse(p_val < 0.001, "< 0.001", round(p_val, 3))
+beta_ga_val <- round(beta_ga, 0)
+
+# Build annotation: two parsed expressions stacked vertically
+# Position in lower-right of plot area
+# Stat box: right-anchored to the panel edge so it fits the narrow panel
+box_xr <- max(df$GA) + 0.3
+box_xl <- box_xr - 7.0 # snug box width (roomier for larger text)
+box_cx <- (box_xl + box_xr) / 2 # centre for centred text
+box_y_base <- min(df$CerebVol) - diff(range(df$CerebVol)) * 0.03
+y_step <- diff(range(df$CerebVol)) * 0.04
+
+stat_exprs <- c(
+ paste0("beta == ", beta_ga_val, " ~ mm^3 ~ wk^-1"),
+ paste0("italic(r) == ", partial_r, "*',' ~~ italic(P) == ", p_display)
+)
+
+fig_1b <- ggplot() +
+ geom_ribbon(data = pred_df, aes(x = GA, ymin = lwr, ymax = upr),
+ fill = "gray80", alpha = 0.25) +
+ geom_line(data = pred_df, aes(x = GA, y = pred),
+ colour = "black", linewidth = 0.4) +
+ geom_point(data = df, aes(x = GA, y = CerebVol, colour = GA_group),
+ size = 1.2, alpha = 1) +
+ # Stat annotation (no box) — plain text, matching the deck
+ annotate("text", x = box_cx, y = box_y_base + y_step * 1.5,
+ label = stat_exprs[1], parse = TRUE,
+ size = 2.4, fontface = "bold", hjust = 0.5) +
+ annotate("text", x = box_cx, y = box_y_base + y_step * 0.2,
+ label = stat_exprs[2], parse = TRUE,
+ size = 2.4, fontface = "bold", hjust = 0.5) +
+ scale_colour_manual(values = ga_colors, labels = ga_labels, name = NULL) +
+ scale_x_continuous(breaks = c(22, 26, 30, 34)) +
+ scale_y_continuous(labels = scales::comma, breaks = seq(10000, 25000, 5000),
+ expand = expansion(mult = c(0.05, 0.02))) +
+ labs(
+ x = "Gestational age at birth (weeks)",
+ y = expression("Cerebellar volume (mm"^3*")")
+ ) +
+ theme_minimal(base_size = 10) +
+ theme(
+ legend.position = "bottom",
+ legend.margin = margin(t = -2, b = 0),
+ legend.key.size = unit(0.3, "cm"),
+ legend.text = element_text(size = 8),
+ axis.title.x = element_text(size = 10),
+ axis.title.y = element_text(size = 10),
+ axis.text = element_text(size = 10),
+ axis.line = element_blank(),
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ panel.grid = element_blank(),
+ plot.margin = margin(t = 3, r = 5, b = 3, l = 3)
+ )
+
+fig_1b
+
+# Save PDF
+ggsave("Figure_1A_CerebVol_vs_GA.pdf",
+ fig_1b, width = 2.75, height = 4, dpi = 300)
+message("Saved: Figure_1/Figure_1A_CerebVol_vs_GA.pdf")
+```
+
+## Statistical Summary Table
+
+```{r stats_table}
+fig_stats <- data.frame(
+ Metric = c("GA coefficient",
+ "Partial r (GA | PMA)",
+ "p-value (OLS)",
+ "p-value (HC3 robust)",
+ "Cohen's f² (GA)",
+ "Model R²",
+ "Sample size"),
+ Value = c(
+ paste0(beta_ga_val, " mm³/week"),
+ round(partial_r_GA, 2),
+ ifelse(p_val < 0.001, "< 0.001", round(p_val, 3)),
+ ifelse(robust_p["GA"] < 0.001, "< 0.001", round(robust_p["GA"], 3)),
+ round(f2_GA, 3),
+ round(r2_full, 3),
+ nrow(df)
+ )
+)
+
+kable(fig_stats, caption = "Figure 1B — Statistical Summary",
+ col.names = c("Metric", "Value")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Session Info
+
+```{r session_info}
+sessionInfo()
+```

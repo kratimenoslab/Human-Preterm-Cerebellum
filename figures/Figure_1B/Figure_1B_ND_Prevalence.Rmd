@@ -1,0 +1,379 @@
+---
+title: "Figure 1B: Neurodevelopmental Delay Prevalence (EP vs VP)"
+subtitle: "Motor, Cognitive, and Language Delay — Fisher's Exact Test"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 3.5, fig.height = 5, dpi = 300
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+# Data lives in Figures_V2_Final/Supplementary_Datasets/ (git-ignored, kept off GitHub). This
+# returns a RELATIVE path by walking up to find a "Supplementary_Datasets/" folder, so no
+# machine-specific / user path is ever embedded in the code or rendered HTML.
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) {
+ rel <- file.path(prefix, subdir, nm)
+ if (file.exists(rel)) return(rel)
+ }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Data Loading and Exclusion Flow
+
+## Cohort Derivation
+
+The neurodevelopmental cohort with valid assessments (N = 169, including LP) was derived from the full enrolled sample. This panel analyzes the extremely-preterm and very-preterm subset (N = 145; LP excluded). No MRI data is required for this panel.
+
+```{r exclusion_flow}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+
+# Exclusion flow table
+excl_flow <- data.frame(
+ Step = c(
+ "MRI scans after quality review",
+ "Scan-timing exclusions",
+ "",
+ "After scan-timing exclusions",
+ "Late-preterm ND-only exclusion",
+ "After LP ND-only exclusion",
+ "No valid ND assessment in 9-36 month window",
+ "Invalid domain records excluded",
+ "**Final ND cohort (incl. LP)**"
+ ),
+ Detail = c(
+ "",
+ "ID 469 (GA=33.8, LP): Scanned ~2 days after birth (PMA 34.1 wk), not TEA",
+ "ID 57 (GA=28.0, VP): Scanned 20 wk post-birth (PMA 48 wk), outside TEA window",
+ "",
+ "IDs 140, 478 (LP; valid ND but no MRI or ultrasound; outside all analyzed modalities)",
+ "",
+ "ID 465 (GA=30.5, VP): Only assessment in window has missing (NaN) Delay value",
+ "6 subjects (IDs 15, 17, 23, 39, 58, 73) with Delay=N but all domain sub-scores NA -- excluded",
+ ""
+ ),
+ N = c("N = 180", "-1", "-1", "N = 178", "-2", "N = 176", "-1", "-6", "**N = 169**"),
+ stringsAsFactors = FALSE
+)
+
+kable(excl_flow,
+ caption = "Exclusion Flow: Neurodevelopmental Cohort",
+ col.names = c("Step", "Detail", "N")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+ row_spec(9, bold = TRUE, background = "#f0f7fb")
+```
+
+**ND Assessment Window:** 9--36 months corrected age. When multiple assessments exist, the one closest to the 22.5-month midpoint with a valid Delay classification (Y/N) is selected.
+
+**GA Group Definitions:**
+
+| Group | Label | GA Range |
+|-------|-------|----------|
+| EP | Extremely Preterm | < 28 weeks |
+| VP | Very Preterm | 28 to < 32 weeks |
+| LP | Late Preterm | >= 32 weeks |
+
+**Data Source:** `Supplementary_Datasets/Dataset_Clinical_MRI_US_ND.xlsx`, sheet = "Neurodevelopmental". The sheet contains all 178 subjects (post scan-timing exclusions); excluded subjects are marked via the `Included` and `Exclusion_Reason` columns. The code below filters to `Included == "Yes"` to obtain the analytic sample.
+
+## Load Data
+
+```{r load_data}
+# ============================================================
+# LOAD FROM FINAL ANALYSIS DATASET — Neurodevelopmental sheet
+# Sheet contains all 178 subjects; filter to Included == "Yes"
+# for the with-LP ND cohort (N = 169); Fig 1B uses the EP+VP subset (N = 145)
+# ============================================================
+data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+nd_all <- read_excel(data_file, sheet = "Neurodevelopmental")
+
+# Show what was excluded
+excluded <- nd_all %>% filter(Included == "No")
+if (nrow(excluded) > 0) {
+ excluded %>%
+ select(Study_ID, GA_weeks, GA_Group, Exclusion_Reason) %>%
+ kable(caption = "Excluded from Neurodevelopmental Analysis",
+ col.names = c("Study ID", "GA (wk)", "Group", "Reason")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+}
+
+# Filter to included subjects only
+nd_data <- nd_all %>% filter(Included == "Yes")
+
+# Exclude 6 patients with Delay="N" but ALL domain sub-scores NA
+# (IDs 15, 17, 23, 39, 58, 73) — consistent with the original analysis pipeline
+domain_invalid_ids <- c(15, 17, 23, 39, 58, 73)
+nd_data <- nd_data %>% filter(!Study_ID %in% domain_invalid_ids)
+
+# Create binary columns
+nd_data <- nd_data %>%
+ mutate(
+ GA_Category = factor(
+ case_when(
+ GA_weeks < 28 ~ "Extremely Preterm",
+ GA_weeks < 32 ~ "Very Preterm",
+ TRUE ~ "Late Preterm"
+ ),
+ levels = c("Extremely Preterm", "Very Preterm", "Late Preterm")
+ ),
+ Motor_Delay_Binary = ifelse(Motor_Delay == "Y", 1L, ifelse(Motor_Delay == "N", 0L, NA_integer_)),
+ Cognitive_Binary = ifelse(Cognitive_Delay == "Y", 1L, ifelse(Cognitive_Delay == "N", 0L, NA_integer_)),
+ Language_Delay_Binary = ifelse(Language_Delay == "Y", 1L, ifelse(Language_Delay == "N", 0L, NA_integer_))
+ )
+
+# Color scheme (' updated palette 2026-08 — eyedropper from PowerPoint)
+ga_colors <- c(
+ "Extremely Preterm" = "#030403", # EP near-black
+ "Very Preterm" = "#DE1567", # VP crimson/magenta
+ "Late Preterm" = "#7BACDC" # LP light blue
+)
+
+ga_fill <- ga_colors # solid fills (deck: filled bars)
+
+# Cohort summary
+data.frame(
+ Metric = c("Total ND cohort", "EP (<28 wk)", "VP (28-<32 wk)", "LP (>=32 wk)"),
+ N = c(nrow(nd_data),
+ sum(nd_data$GA_Category == "Extremely Preterm"),
+ sum(nd_data$GA_Category == "Very Preterm"),
+ sum(nd_data$GA_Category == "Late Preterm"))
+) %>%
+ kable(caption = "Neurodevelopmental Cohort Summary",
+ col.names = c("Group", "N")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Figure 1B: ND Delay Prevalence (EP vs VP)
+
+```{r figure_1b, fig.width=3.5, fig.height=5}
+# ============================================================
+# FIGURE 1B: Grouped bar chart — Motor, Cognitive, Language
+# EP vs VP only (LP excluded from this panel)
+# Fisher's exact test with significance brackets
+# Matching the original pipeline methods exactly
+# ============================================================
+
+# --- Helper: format p-value ---
+format_pval <- function(p) {
+ if (is.na(p)) return("NA")
+ if (p < 0.001) return("P < 0.001")
+ if (p < 0.01) return(paste0("P = ", formatC(p, format = "f", digits = 3)))
+ if (p < 0.05) return(paste0("P = ", formatC(p, format = "f", digits = 3)))
+ return(paste0("P = ", formatC(p, format = "f", digits = 2)))
+}
+
+# --- Subset to EP and VP only ---
+ep_vp_data <- nd_data %>%
+ filter(GA_Category %in% c("Extremely Preterm", "Very Preterm")) %>%
+ mutate(GA_Category = droplevels(GA_Category))
+
+data.frame(
+ Group = c("EP", "VP", "Total (EP + VP)"),
+ N = c(sum(ep_vp_data$GA_Category == "Extremely Preterm"),
+ sum(ep_vp_data$GA_Category == "Very Preterm"),
+ nrow(ep_vp_data))
+) %>%
+ kable(caption = "EP + VP Subset for Figure 1B", col.names = c("Group", "N")) %>%
+ kable_styling(bootstrap_options = c("condensed"), full_width = FALSE)
+
+# --- Delay domains ---
+delay_info <- list(
+ list(col = "Motor_Delay_Binary", label = "Motor"),
+ list(col = "Cognitive_Binary", label = "Cognitive"),
+ list(col = "Language_Delay_Binary", label = "Language")
+)
+
+# --- Build prevalence data + Fisher's tests ---
+all_prev <- data.frame()
+fisher_results <- list()
+
+for (info in delay_info) {
+ col <- info$col
+ label <- info$label
+
+ prev_data <- ep_vp_data %>%
+ filter(!is.na(.data[[col]])) %>%
+ group_by(GA_Category) %>%
+ summarise(
+ N = n(),
+ N_Delay = sum(.data[[col]], na.rm = TRUE),
+ Rate = mean(.data[[col]], na.rm = TRUE) * 100,
+ .groups = "drop"
+ ) %>%
+ mutate(
+ SE = sqrt(Rate/100 * (1 - Rate/100) / N) * 100,
+ CI_lower = pmax(Rate - 1.96 * SE, 0),
+ CI_upper = pmin(Rate + 1.96 * SE, 100),
+ Domain = label
+ )
+
+ all_prev <- bind_rows(all_prev, prev_data)
+
+ # Fisher's exact test
+ ep_vp_valid <- ep_vp_data %>%
+ filter(!is.na(.data[[col]])) %>%
+ mutate(GA_Category = droplevels(GA_Category))
+ tbl <- table(ep_vp_valid$GA_Category, ep_vp_valid[[col]])
+ fish_test <- tryCatch(fisher.test(tbl), error = function(e) list(p.value = NA))
+ fisher_results[[label]] <- fish_test$p.value
+}
+
+# Set factor levels for domain ordering
+all_prev$Domain <- factor(all_prev$Domain, levels = c("Motor", "Cognitive", "Language"))
+
+# GA group labels for legend
+ga_bar_labels <- c("Extremely Preterm" = "EP",
+ "Very Preterm" = "VP")
+all_prev$GA_Label <- ga_bar_labels[as.character(all_prev$GA_Category)]
+all_prev$GA_Label <- factor(all_prev$GA_Label, levels = ga_bar_labels)
+
+# --- Rename Domain levels to include "delay" (matching reference) ---
+all_prev$Domain <- factor(
+ paste0(all_prev$Domain, "\ndelay"),
+ levels = c("Motor\ndelay", "Cognitive\ndelay", "Language\ndelay")
+)
+
+# --- Build Fisher p-value label per domain ---
+fisher_labels <- data.frame(
+ Domain = factor(
+ paste0(names(fisher_results), "\ndelay"),
+ levels = levels(all_prev$Domain)
+ ),
+ p_val = sapply(fisher_results, identity),
+ p_label = sapply(fisher_results, function(p) {
+ if (is.na(p)) return("")
+ if (p < 0.001) return("italic(P) < 0.001")
+ # quote the value so plotmath keeps trailing zeros (e.g. 0.030, not 0.03)
+ paste0("italic(P) == '", sprintf("%.3f", p), "'")
+ }),
+ stringsAsFactors = FALSE
+)
+
+# --- Single-panel grouped bar chart: ONE outer box (no internal dividers) ---
+# Continuous x positions: 3 domains spaced apart, EP/VP dodged within each.
+dom_lv <- c("Motor\ndelay", "Cognitive\ndelay", "Language\ndelay")
+dom_ctr <- c(1, 2.2, 3.4); names(dom_ctr) <- dom_lv # domain centres (gap between domains)
+off <- 0.28 # EP/VP offset within a domain
+all_prev$Domain <- factor(all_prev$Domain, levels = dom_lv)
+all_prev$xc <- dom_ctr[as.character(all_prev$Domain)]
+all_prev$xpos <- all_prev$xc + ifelse(all_prev$GA_Label == "EP", -off, off)
+xdf <- all_prev[order(all_prev$xpos), ]
+y_top <- 95
+
+# P brackets per domain (over the EP/VP pair)
+domain_max_ci <- all_prev %>% group_by(Domain) %>%
+ summarise(max_ci = max(CI_upper, na.rm = TRUE), xc = first(xc), .groups = "drop")
+bracket_data <- fisher_labels %>%
+ left_join(domain_max_ci, by = "Domain") %>%
+ filter(!is.na(p_val) & p_val < 0.10) %>%
+ mutate(x_left = xc - off, x_right = xc + off, bracket_y = max_ci + 6, label_y = bracket_y + 3)
+
+# domain headers (above the box) + underline
+hdr <- data.frame(xc = dom_ctr, lab = dom_lv)
+
+fig_1c <- ggplot(all_prev, aes(x = xpos, y = Rate, fill = GA_Label)) +
+ geom_col(width = 0.5, colour = NA) +
+ geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper),
+ width = 0.14, linewidth = 0.5, colour = "black") +
+ # significance brackets
+ geom_segment(data = bracket_data, inherit.aes = FALSE,
+ aes(x = x_left, xend = x_right, y = bracket_y, yend = bracket_y), linewidth = 0.35) +
+ geom_segment(data = bracket_data, inherit.aes = FALSE,
+ aes(x = x_left, xend = x_left, y = bracket_y - 1.5, yend = bracket_y), linewidth = 0.35) +
+ geom_segment(data = bracket_data, inherit.aes = FALSE,
+ aes(x = x_right, xend = x_right, y = bracket_y - 1.5, yend = bracket_y), linewidth = 0.35) +
+ geom_text(data = bracket_data, inherit.aes = FALSE,
+ aes(x = xc, y = label_y, label = p_label), parse = TRUE, size = 3.0) +
+ # domain headers + underline (above the box; clip off) — underline sits just under the text
+ geom_text(data = hdr, inherit.aes = FALSE, aes(x = xc, y = y_top + 15, label = lab),
+ size = 3.4, lineheight = 0.9, vjust = 1) +
+ geom_segment(data = hdr, inherit.aes = FALSE,
+ aes(x = xc - 0.5, xend = xc + 0.5, y = y_top + 6, yend = y_top + 6), linewidth = 0.9) +
+ scale_fill_manual(values = c("EP" = ga_colors[["Extremely Preterm"]],
+ "VP" = ga_colors[["Very Preterm"]]), guide = "none") +
+ scale_x_continuous(breaks = xdf$xpos, labels = as.character(xdf$GA_Label),
+ expand = expansion(add = 0.45)) +
+ scale_y_continuous(breaks = seq(0, 80, 20), expand = expansion(mult = c(0, 0.05))) +
+ coord_cartesian(ylim = c(0, y_top), clip = "off") +
+ labs(x = NULL, y = "Prevalence (%)") +
+ theme_classic(base_size = 10) +
+ theme(
+ axis.text.x = element_text(size = 10),
+ axis.text.y = element_text(size = 10),
+ axis.title.y = element_text(size = 10),
+ axis.line = element_blank(),
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.ticks = element_line(linewidth = 0.3, color = "gray30"),
+ plot.margin = margin(t = 42, r = 6, b = 2, l = 2)
+ )
+
+fig_1c
+ggsave("Figure_1B_ND_Prevalence.pdf", fig_1c, width = 2.9, height = 4.5, dpi = 300)
+message("Saved: Figure_1B_ND_Prevalence.pdf")
+```
+
+## Prevalence Summary Table
+
+```{r prevalence_table}
+prev_table <- all_prev %>%
+ mutate(
+ Rate_CI = sprintf("%.1f%% (%.1f-%.1f)", Rate, CI_lower, CI_upper),
+ Fraction = paste0(N_Delay, "/", N)
+ ) %>%
+ select(Domain, GA_Label, Fraction, Rate_CI)
+
+kable(prev_table,
+ caption = "Figure 1B: ND Delay Prevalence — EP vs VP",
+ col.names = c("Domain", "Group", "n/N", "Rate (95% CI)")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Fisher's Exact Test Results
+
+```{r fisher_table}
+fish_table <- data.frame(
+ Domain = names(fisher_results),
+ P_Value = sapply(fisher_results, function(p) {
+ if (is.na(p)) "NA"
+ else if (p < 0.001) "< 0.001"
+ else sprintf("%.4f", p)
+ }),
+ Significant = sapply(fisher_results, function(p) ifelse(!is.na(p) & p < 0.05, "Yes", "No")),
+ row.names = NULL
+)
+
+kable(fish_table,
+ caption = "Fisher's Exact Test: EP vs VP by Domain",
+ col.names = c("Domain", "p-value", "Significant (p < 0.05)")) %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Session Info
+
+```{r session_info}
+sessionInfo()
+```

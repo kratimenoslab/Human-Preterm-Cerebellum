@@ -1,0 +1,223 @@
+---
+title: "Figure 1C: Cerebellar Volume by Neurodevelopmental Delay Status"
+subtitle: "Motor, Cognitive, Language — No Delay vs Delay (EP + VP), Wilcoxon test"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 3, fig.height = 4.5, dpi = 300
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+# Data lives in Figures_V2_Final/Supplementary_Datasets/ (git-ignored, kept off GitHub). This
+# returns a RELATIVE path by walking up to find a "Supplementary_Datasets/" folder, so no
+# machine-specific / user path is ever embedded in the code or rendered HTML.
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) {
+ rel <- file.path(prefix, subdir, nm)
+ if (file.exists(rel)) return(rel)
+ }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Deck panel **Figure 1C**. Cerebellar volume (mm³) compared between infants **with vs without** delay,
+for each neurodevelopmental domain (Motor, Cognitive, Language). Points are individual subjects coloured
+by gestational-age group (EP / VP); LP excluded (low ND-outcome prevalence, EP+VP subset, GA < 32 wk).
+Group comparison by two-sided **Wilcoxon rank-sum test**.
+
+This is the boxplot analysis that was previously the *old* Figure S3
+("Cerebellar volume vs neurodevelopmental delay"), promoted to main Figure 1C in the merged 4-figure deck.
+
+```{r libs}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(grid)
+library(knitr)
+library(kableExtra)
+```
+
+# Data (MRI volume × ND delay)
+
+```{r load-merge}
+# Colours
+ga_colors <- c("Extremely Preterm" = "#030403", # ' updated palette (eyedropper)
+ "Very Preterm" = "#DE1567",
+ "Late Preterm" = "#7BACDC")
+ga_labels_short <- c("Extremely Preterm" = "EP", "Very Preterm" = "VP", "Late Preterm" = "LP")
+
+data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+
+# --- MRI (volumetric) ---
+mri <- read_excel(data_file, sheet = "MRI") %>%
+ filter(Included == "Yes") %>%
+ rename(GA = GA_weeks, CerebVol = Cerebellar_Volume_mm3, GA_Group_raw = GA_Group) %>%
+ mutate(
+ Study_ID = as.character(Study_ID),
+ GA_Category = factor(case_when(
+ GA_Group_raw == "EP" ~ "Extremely Preterm",
+ GA_Group_raw == "VP" ~ "Very Preterm",
+ GA_Group_raw == "LP" ~ "Late Preterm"),
+ levels = c("Extremely Preterm", "Very Preterm", "Late Preterm"))
+ )
+
+# --- ND (same cohort rule as Figure 1B) ---
+nd <- read_excel(data_file, sheet = "Neurodevelopmental") %>%
+ filter(Included == "Yes") %>%
+ mutate(Study_ID = as.character(Study_ID))
+# Exclude 6 patients with Delay="N" but all domain sub-scores NA (IDs 15,17,23,39,58,73)
+nd <- nd %>% filter(!Study_ID %in% c("15","17","23","39","58","73"))
+
+# --- Merge (subjects with BOTH volume and ND) ---
+analysis_data <- mri %>%
+ inner_join(nd %>% select(Study_ID, Any_Delay, Motor_Delay, Cognitive_Delay, Language_Delay),
+ by = "Study_ID") %>%
+ filter(Any_Delay %in% c("Y", "N"))
+
+# Drop records with valid overall status but all-NA domains
+invalid_domain <- analysis_data %>%
+ filter(Any_Delay == "N", is.na(Motor_Delay) & is.na(Cognitive_Delay) & is.na(Language_Delay))
+analysis_data <- analysis_data %>% anti_join(invalid_domain, by = "Study_ID")
+
+# EP + VP subset (GA < 32 wk) — LP excluded
+analysis_lt32 <- analysis_data %>% filter(GA < 32)
+
+data.frame(
+ Group = c("EP", "VP", "Total (EP+VP)"),
+ N = c(sum(analysis_lt32$GA_Category == "Extremely Preterm"),
+ sum(analysis_lt32$GA_Category == "Very Preterm"),
+ nrow(analysis_lt32))
+) %>% kable(caption = "Analytic cohort (volume × ND, GA < 32 wk)") %>%
+ kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+```
+
+# Figure 1C
+
+```{r figure-1c, fig.width=3, fig.height=4.5}
+# --- Long format: one row per subject × domain ---
+long <- analysis_lt32 %>%
+ select(Study_ID, CerebVol, GA_Category, Motor_Delay, Cognitive_Delay, Language_Delay) %>%
+ pivot_longer(c(Motor_Delay, Cognitive_Delay, Language_Delay),
+ names_to = "Domain", values_to = "Delay_Status") %>%
+ filter(Delay_Status %in% c("N", "Y")) %>%
+ mutate(
+ Domain = dplyr::case_match(Domain, "Motor_Delay" ~ "Motor",
+ "Cognitive_Delay" ~ "Cognitive", "Language_Delay" ~ "Language"),
+ Domain = factor(Domain, levels = c("Motor", "Cognitive", "Language")),
+ Delay_Status = factor(Delay_Status, levels = c("N", "Y"),
+ labels = c("No\ndelay", "Delay"))
+ )
+
+# --- Wilcoxon per domain + bracket geometry ---
+rng <- diff(range(long$CerebVol, na.rm = TRUE))
+stat_df <- long %>%
+ group_by(Domain) %>%
+ summarise(p = wilcox.test(CerebVol ~ Delay_Status)$p.value,
+ ymax = max(CerebVol, na.rm = TRUE), .groups = "drop") %>%
+ mutate(
+ bracket_y = ymax + rng * 0.06,
+ tick = rng * 0.02,
+ label_y = bracket_y + rng * 0.055,
+ p_label = ifelse(p < 0.001, "italic(P) < 0.001",
+ paste0("italic(P) == '", sprintf("%.3f", p), "'"))
+ )
+
+kable(stat_df %>% select(Domain, p), digits = 4,
+ caption = "Wilcoxon rank-sum: volume, No delay vs Delay") %>%
+ kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+
+# Deck fill: No delay = white, Delay = warm tan/greige
+fill_cols <- c("No\ndelay" = "white", "Delay" = "#DDD8D3")
+
+# --- Single-panel layout: continuous x, ONE outer box (no facet dividers) ---
+dom_lv <- c("Motor", "Cognitive", "Language")
+dom_ctr <- c(1, 2.2, 3.4); names(dom_ctr) <- dom_lv
+off <- 0.28
+long$Domain <- factor(long$Domain, levels = dom_lv)
+long$xc <- dom_ctr[as.character(long$Domain)]
+long$xpos <- long$xc + ifelse(long$Delay_Status == "Delay", off, -off)
+
+stat_df <- stat_df %>%
+ mutate(Domain = factor(Domain, levels = dom_lv),
+ xc = dom_ctr[as.character(Domain)], x_left = xc - off, x_right = xc + off)
+
+y_lo <- min(long$CerebVol, na.rm = TRUE) - rng * 0.03
+box_top <- 30000
+ul_y <- box_top + rng * 0.075 # underline: clearly above the box
+hdr_y <- box_top + rng * 0.105 # header text: just above its underline
+hdr <- data.frame(xc = dom_ctr, lab = dom_lv)
+
+fig_1c <- ggplot(long, aes(x = xpos, y = CerebVol)) +
+ geom_boxplot(aes(group = xpos, fill = Delay_Status), width = 0.42, outlier.shape = NA,
+ colour = "gray30", linewidth = 0.45) +
+ geom_jitter(aes(colour = GA_Category), width = 0.10, alpha = 1, size = 1.1) +
+ # significance brackets
+ geom_segment(data = stat_df, inherit.aes = FALSE,
+ aes(x = x_left, xend = x_right, y = bracket_y, yend = bracket_y), linewidth = 0.35, colour = "gray20") +
+ geom_segment(data = stat_df, inherit.aes = FALSE,
+ aes(x = x_left, xend = x_left, y = bracket_y - tick, yend = bracket_y), linewidth = 0.35, colour = "gray20") +
+ geom_segment(data = stat_df, inherit.aes = FALSE,
+ aes(x = x_right, xend = x_right, y = bracket_y - tick, yend = bracket_y), linewidth = 0.35, colour = "gray20") +
+ geom_text(data = stat_df, inherit.aes = FALSE,
+ aes(x = xc, y = label_y, label = p_label), parse = TRUE, size = 3.0, colour = "gray20") +
+ # domain headers + underline (above the box)
+ geom_text(data = hdr, inherit.aes = FALSE, aes(x = xc, y = hdr_y, label = lab), size = 3.4, vjust = 0) +
+ geom_segment(data = hdr, inherit.aes = FALSE,
+ aes(x = xc - 0.32, xend = xc + 0.32, y = ul_y, yend = ul_y), linewidth = 0.9) +
+ scale_fill_manual(values = fill_cols, guide = "none") +
+ scale_colour_manual(values = ga_colors, labels = ga_labels_short, name = NULL) +
+ guides(colour = guide_legend(nrow = 1, override.aes = list(size = 2))) +
+ scale_x_continuous(breaks = sort(unique(long$xpos)),
+ labels = rep(c("No\ndelay", "Delay"), 3), expand = expansion(add = 0.4)) +
+  scale_y_continuous(labels = label_comma(), breaks = seq(10000, 30000, 5000)) +
+ coord_cartesian(ylim = c(y_lo, box_top), clip = "off") +
+ labs(x = NULL, y = expression("Cerebellar volume (mm"^3*")")) +
+ theme_classic(base_size = 10) +
+ theme(
+ axis.text.x = element_text(size = 10),
+ axis.text.y = element_text(size = 10),
+ axis.title.y = element_text(size = 10),
+ axis.line = element_blank(),
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.ticks = element_line(linewidth = 0.3, colour = "gray30"),
+ panel.grid = element_blank(),
+ legend.position = c(0.015, 0.985),
+ legend.justification = c(0, 1),
+ legend.direction = "horizontal",
+ legend.key.size = unit(0.28, "cm"),
+ legend.text = element_text(size = 8),
+ legend.background = element_rect(fill = "white", colour = "gray40", linewidth = 0.3),
+ legend.margin = margin(2, 4, 2, 3),
+ plot.margin = margin(t = 40, r = 6, b = 3, l = 3)
+ )
+
+fig_1c
+ggsave("Figure_1C_Volume_by_Delay.pdf", fig_1c, width = 3.2, height = 4.5, dpi = 300)
+message("Saved: Figure_1C_Volume_by_Delay.pdf")
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

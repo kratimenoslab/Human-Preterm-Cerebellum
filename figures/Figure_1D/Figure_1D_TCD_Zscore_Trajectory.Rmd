@@ -1,0 +1,232 @@
+---
+title: "Figure 1D: Transcerebellar Diameter Z-score Trajectory vs Postmenstrual Age"
+subtitle: "Serial cranial ultrasound TCD referenced to INTERGROWTH-21st (ig_fet / tcdfga); EP / VP / LP"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 2.2, fig.height = 3.0, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+# Data lives in Figures_V2_Final/Supplementary_Datasets/ (git-ignored). Returns a RELATIVE path
+# so no machine/user path is embedded in code or rendered HTML.
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Deck panel **Figure 1D** (row "Serial cranial ultrasound"). The reviewer asked us to compare our
+preterm infants directly against a **published in-utero fetal normative standard**, like-for-like, so the
+deviation from the expected fetal trajectory is shown explicitly.
+
+We use the **transcerebellar diameter (TCD)**, measured in the coronal plane on serial cranial ultrasound
+(`Coronal_Transverse` in the dataset, in mm), and reference each measurement to the **INTERGROWTH-21st**
+international fetal standard for cerebellar growth (Rodriguez-Sibaja et al., *Ultrasound Obstet Gynecol*
+2021;57:614-623; PMID 32196791), via the `gigs` package (`family = "ig_fet"`, `acronym = "tcdfga"`).
+
+Because fetal gestational age and postnatal postmenstrual age (PMA) are the **same clock**, each infant scan
+at *N* weeks PMA is compared to the fetal norm at GA = *N* weeks. TCD is expressed as a **z-score** and plotted
+against PMA. The INTERGROWTH standard extends to ~40 weeks, so scans beyond **280 days (40 wk) PMA** have no
+reference and are dropped (per agreement with C. Cherry). This analysis reproduces `caller.R` (C. Cherry).
+
+```{r libs}
+library(gigs)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(mgcv)
+library(lme4)
+library(lmerTest)
+library(knitr)
+```
+
+# Data + z-score conversion
+
+```{r load}
+days_per_month <- 30.44
+grp_order <- c("EP", "VP", "LP")
+group_cols <- c(EP = "#030403", VP = "#DE1567", LP = "#7BACDC") # ' EP/VP/LP palette
+
+data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx",
+ "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+
+exp <- read_excel(data_file, sheet = "Ultrasound") %>%
+ # TCD (transcerebellar diameter, mm) = coronal transverse cerebellar measurement
+ mutate(
+ TCD = as.numeric(Coronal_Transverse),
+ PMA_weeks = as.numeric(PMA_weeks),
+ PMA_days = PMA_weeks * 7,
+ PMA_months = PMA_days / days_per_month,
+ Study_ID = as.character(Study_ID)
+ ) %>%
+ filter(PMA_days <= 280 & !is.na(TCD)) %>%
+ mutate(GA_Group = factor(GA_Group, levels = grp_order))
+
+# Convert each measured TCD to a z-score vs the INTERGROWTH-21st fetal standard
+exp$Z.Score <- value2zscore(
+ exp$TCD,
+ exp$PMA_days,
+ family = "ig_fet",
+ acronym = "tcdfga"
+)
+
+kable(exp %>% count(GA_Group, name = "N_measurements"),
+ caption = "TCD measurements per GA group (PMA <= 280 days)")
+```
+
+# Statistics
+
+```{r stats-zpermonth}
+# 1. Change in z-score per month (slope; negative = falling further below the norm).
+# The slope p-value is scale-invariant, so it is identical whether PMA is in
+# weeks or months; annotations report this p-value per group.
+growth_rate <- exp %>%
+ group_by(GA_Group) %>%
+ summarise(
+ Z_per_Month = coef(lm(Z.Score ~ PMA_months))[2],
+ p = summary(lm(Z.Score ~ PMA_months))$coef[2, 4],
+ .groups = "drop"
+ )
+kable(growth_rate, digits = c(0, 3, 6),
+ caption = "Change in TCD z-score per month, by GA group")
+```
+
+```{r stats-below5}
+# 2. Proportion of measurements below the reference 5th percentile (z < -1.645).
+below5 <- exp %>%
+ group_by(GA_Group) %>%
+ summarise(
+ N = n(),
+ Below5 = sum(Z.Score < -1.645),
+ Percent = 100 * mean(Z.Score < -1.645),
+ .groups = "drop"
+ )
+kable(below5, digits = c(0, 0, 0, 1),
+ caption = "Percent of measurements below the reference 5th percentile")
+```
+
+```{r stats-maxdeficit}
+# 3. Maximum smoothed z-score deficit (GAM peak deficit), for reference.
+pred <- expand_grid(
+ PMA_months = seq(98, 280) / days_per_month,
+ GA_Group = factor(grp_order, levels = grp_order)
+)
+gam_fit <- gam(Z.Score ~ GA_Group + s(PMA_months, by = GA_Group),
+ data = exp, method = "REML")
+pred$Z <- predict(gam_fit, newdata = pred)
+max_deficit <- pred %>%
+ group_by(GA_Group) %>%
+ slice_min(Z, n = 1, with_ties = FALSE) %>%
+ transmute(GA_Group,
+ Peak_Deficit_Month = PMA_months,
+ Peak_Deficit_Z = Z)
+kable(max_deficit, digits = c(0, 2, 2),
+ caption = "Maximum smoothed z-score deficit (GAM)")
+```
+
+```{r stats-lme}
+# 4. Overall trajectory difference across groups: linear mixed-effects model with
+# fixed effects for PMA, group and their interaction, random intercept per infant,
+# Type III tests with Satterthwaite degrees of freedom.
+fit <- lmer(TCD ~ PMA_months * GA_Group + (1 | Study_ID), data = exp)
+anova(fit)
+```
+
+# Figure 1D
+
+```{r figure, fig.width=2.2, fig.height=3.0}
+# Annotation strings built from the computed statistics ---------------------
+fmt_p <- function(p) ifelse(p < 0.001, "italic(P) < 0.001",
+ paste0("italic(P) == '", sprintf("%.3f", p), "'"))
+lab <- below5 %>%
+ left_join(growth_rate, by = "GA_Group") %>%
+ mutate(GA_Group = factor(GA_Group, levels = grp_order)) %>%
+ arrange(GA_Group) %>%
+ mutate(
+ txt = paste0(as.character(GA_Group), "*' – '*", fmt_p(p),
+ "*'; '*", sprintf("%.0f", Percent), "*'% <5th'"),
+    y   = c(-3.50, -3.85, -4.20)[seq_len(n())]
+ )
+
+x_lo <- 22; x_hi <- 40
+ref_x <- x_hi + 0.15 # ref-line labels sit just past the right edge
+
+# In-plot legend (top-left), coloured line keys + labels (matches deck panel D)
+leg <- data.frame(
+ GA_Group = factor(grp_order, levels = grp_order),
+ y = c(1.55, 1.00, 0.45)
+)
+
+p1d <- ggplot(exp, aes(PMA_weeks, Z.Score, color = GA_Group, fill = GA_Group)) +
+ # Reference lines: fetal median and +/- 2 SD (97.7th / 2.3rd centiles)
+ geom_hline(yintercept = 2, linetype = "dashed", colour = "grey55", linewidth = 0.3) +
+ geom_hline(yintercept = 0, linetype = "dashed", colour = "grey35", linewidth = 0.3) +
+ geom_hline(yintercept = -2, linetype = "dotted", colour = "grey55", linewidth = 0.3) +
+ # Per-group linear fits vs PMA with 95% CI
+ geom_smooth(method = "lm", se = TRUE, linewidth = 0.9, alpha = 0.18) +
+ scale_color_manual(values = group_cols) +
+ scale_fill_manual(values = group_cols) +
+ # Reference-line labels (right side)
+ annotate("text", x = ref_x, y = 2, label = "97.7th", hjust = 0, size = 2.5,
+ fontface = "italic", colour = "grey40") +
+ annotate("text", x = ref_x, y = 0, label = "median", hjust = 0, size = 2.5,
+ fontface = "italic", colour = "grey30") +
+ annotate("text", x = ref_x, y = -2, label = "2.3rd", hjust = 0, size = 2.5,
+ fontface = "italic", colour = "grey40") +
+ # Per-group statistic annotations (bottom-left), coloured by group
+ geom_text(data = lab, aes(x = x_lo + 0.4, y = y, label = txt, colour = GA_Group),
+ parse = TRUE, hjust = 0, size = 2.5, inherit.aes = FALSE,
+ show.legend = FALSE) +
+ # In-plot legend, top-left: coloured line keys + EP/VP/LP labels
+ geom_segment(data = leg, aes(x = x_lo + 0.5, xend = x_lo + 1.9, y = y, yend = y,
+ colour = GA_Group),
+ linewidth = 0.9, inherit.aes = FALSE, show.legend = FALSE) +
+ geom_text(data = leg, aes(x = x_lo + 2.2, y = y, label = as.character(GA_Group)),
+ hjust = 0, size = 2.6, colour = "black", inherit.aes = FALSE) +
+ scale_x_continuous(breaks = c(22, 28, 33, 39), limits = c(x_lo, x_hi + 3)) +
+ scale_y_continuous(breaks = c(2, 0, -2, -4)) +
+ coord_cartesian(xlim = c(x_lo, x_hi), ylim = c(-4.4, 2.3),
+ expand = FALSE, clip = "off") +
+ labs(x = "Post-menstrual age (weeks)",
+ y = "Transcerebellar diameter\n(Z-score from reference median)") +
+ theme_classic(base_size = 10) +
+ theme(
+ legend.position = "none",
+ axis.text.x = element_text(size = 9),
+ axis.text.y = element_text(size = 9),
+ axis.title.x = element_text(size = 9),
+ axis.title.y = element_text(size = 9),
+ axis.line = element_blank(),
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+ panel.grid = element_blank(),
+ plot.margin = margin(6, 26, 4, 4)
+ )
+
+p1d
+ggsave("Figure_1D_TCD_Zscore_Trajectory.pdf", p1d, width = 2.2, height = 3.0, dpi = 300)
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

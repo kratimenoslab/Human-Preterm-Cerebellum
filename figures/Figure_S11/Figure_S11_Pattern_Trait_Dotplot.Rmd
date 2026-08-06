@@ -1,0 +1,110 @@
+---
+title: "Figure S11 -- CMAP pattern x trait LDSC enrichment dot plot"
+subtitle: "Partitioned-heritability enrichment of the 3 spatial-transcriptomics patterns for cerebellar / cognitive GWAS traits"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+library(dplyr); library(ggplot2); library(readr)
+
+# --- Location-agnostic resolver: walk up to Supplementary_Datasets/Figure_S11/ ---
+find_s11 <- function(fname, subdir = ".", max_up = 6) {
+ prefix <- "."
+ for (i in 0:max_up) {
+ cand <- file.path(prefix, "Supplementary_Datasets", subdir, fname)
+ if (file.exists(cand)) return(cand)
+ prefix <- file.path(prefix, "..")
+ }
+ stop(fname, " not found under any Supplementary_Datasets/", subdir, "/ above ", normalizePath("."))
+}
+```
+
+# Overview
+
+LDSC partitioned-heritability enrichment of the three CoGAPS spatial-transcriptomics patterns
+against cerebellar-imaging and cognitive GWAS traits. **Dot colour = coefficient Z-score** (red–blue,
+−5…5); **dot size = −log10(FDR)**. Only significant associations (**FDR < 0.05**) are shown, matching
+the deck's curated view (3 patterns × 5 traits).
+
+Data: `Supplementary_Datasets/Figure_S11/Dataset_LDSC_Heritability.xlsx` (sheet `ldsc_results_cogaps`; from the lab GitHub repo, LDSC pipeline —
+`source_from_github/`). The full result across all patterns/traits is in that table; here we plot the
+deck's subset.
+
+# Data + subset
+
+```{r data}
+dat <- readxl::read_excel(find_s11("Dataset_LDSC_Heritability.xlsx"), sheet = "ldsc_results_cogaps")
+
+# deck subset: 3 patterns, 5 traits (map the GWAS trait IDs to the deck's short labels)
+pattern_map <- c(Pattern_27 = "CMAP_PCL", Pattern_17 = "CMAP_IGL", Pattern_16 = "CMAP_IGL_IMM")
+trait_map <- c(
+ "Tissink 2022 - Cerebellar Volume" = "Cerebellar volume",
+ "UKB_IDP_0148_IDP_T1_FAST_ROIs_V_cerebellum_crus_II" = "Cerebellum crus II",
+ "UKB_IDP_0151_IDP_T1_FAST_ROIs_V_cerebellum_VIIb" = "Cerebellum VIIb",
+ "Davies reaction time" = "Reaction time",
+ "Chambers_total_cerebellar_volume" = "Total cerebellar volume")
+
+PATTERN_ORDER <- c("CMAP_PCL", "CMAP_IGL_IMM", "CMAP_IGL") # top -> bottom (deck)
+TRAIT_ORDER <- c("Cerebellar volume", "Cerebellum crus II", "Cerebellum VIIb",
+ "Reaction time", "Total cerebellar volume") # left -> right (deck)
+
+df <- dat %>%
+ filter(cell %in% names(pattern_map), trait %in% names(trait_map)) %>%
+ mutate(pattern = factor(pattern_map[cell], levels = rev(PATTERN_ORDER)), # rev -> CMAP_PCL on top
+ trait = factor(trait_map[trait], levels = TRAIT_ORDER),
+ coef_z = `Coefficient_z.score`,
+ neglog10FDR = -log10(FDR)) %>%
+ filter(FDR < 0.05) # significant only (deck)
+knitr::kable(df %>% select(pattern, trait, coef_z, FDR) %>% arrange(pattern, trait), digits = 3,
+ caption = "Significant (FDR<0.05) pattern x trait associations shown in the plot")
+```
+
+# Figure S11 -- dot plot
+
+```{r dotplot, fig.width=2.4, fig.height=4.4}
+p <- ggplot(df, aes(trait, pattern)) +
+ geom_point(aes(size = neglog10FDR, fill = coef_z), shape = 21, colour = "grey35", stroke = 0.25) +
+ scale_fill_gradient2(low = "#3B4CC0", mid = "#F7F7F7", high = "#B40426",
+ midpoint = 0, limits = c(-5, 5), breaks = c(-5, -2.5, 0, 2.5, 5),
+ name = "Coefficient Z-score") +
+ scale_size_area(name = expression(-log[10](FDR)), max_size = 5, breaks = 1.6) +
+ scale_y_discrete(labels = function(x) sub("_", "\n_", x)) + # two-line row labels (CMAP\n_PCL)
+ labs(x = NULL, y = NULL) +
+ theme_bw(base_size = 11) +
+ theme(panel.grid.minor = element_blank(),
+ panel.grid.major.x = element_blank(),
+ panel.grid.major.y = element_line(colour = "grey90", linewidth = 0.4),
+ axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+ axis.text.y = element_text(size = 10),
+ legend.title = element_text(size = 9), legend.text = element_text(size = 8)) +
+ guides(
+ size = guide_legend(position = "top", title.position = "left",
+ override.aes = list(fill = "grey60", colour = "grey60")),
+ fill = guide_colourbar(position = "bottom", title.position = "top",
+ barwidth = unit(2.6, "cm"), barheight = unit(0.35, "cm")))
+print(p)
+ggsave("Figure_S11_Pattern_Trait_Dotplot.pdf", p, width = 2.4, height = 4.4, device = cairo_pdf, bg = "white")
+```
+
+# Provenance
+
+Source: **lab GitHub** `kratimenoslab/Human-Preterm-Cerebellum` → `LDSC/enrichment_analysis/project_cogaps/`
+(`plot_ldsc_enrichment.R`, `ldsc_results_cogaps.csv`); reference code in `source_from_github/`, data consolidated here as `Supplementary_Datasets/Figure_S11/Dataset_LDSC_Heritability.xlsx` (sheet `ldsc_results_cogaps`).
+Patterns: Pattern_27=CMAP_PCL, Pattern_17=CMAP_IGL, Pattern_16=CMAP_IGL_IMM. FDR is precomputed in the table
+(`p.adjust` of the coefficient z-score p-values across all pattern×trait tests). We plot the deck's curated
+subset (these 3 patterns × 5 cerebellar/cognitive traits, FDR<0.05).
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

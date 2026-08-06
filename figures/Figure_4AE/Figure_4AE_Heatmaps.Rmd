@@ -1,0 +1,176 @@
+---
+title: "Figure 4A & 4E -- Spatial Transcriptomics Heatmaps"
+subtitle: "Z-Scored Gene Expression Across Gestational Age: Purkinje (A) and Granule (E) Cell Populations"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE,
+ message = FALSE,
+ warning = FALSE,
+ fig.width = 5,
+ fig.height = 6,
+ dpi = 300
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only; no user/machine path leaks) ---
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Panels **A** and **E** display z-scored gene expression heatmaps from **Visium spatial transcriptomics** across 8 postmortem cerebellar samples (GA 26--40 wk). The top 20 differentially expressed genes are shown for each cell population. Genes subsequently validated by RNAScope ISH are highlighted with dashed boxes.
+
+| Panel | Cell Population | Validated Genes |
+|-------|----------------|-----------------|
+| **A** | Purkinje cells (top 20 genes) | PLP1, KLF9 |
+| **E** | Granule cells (top 20 genes) | TUBB4A, GRM4 |
+
+# Libraries
+
+```{r libraries}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Source Data & Methods
+
+## Data Source
+
+Z-scored expression values were derived from **10x Visium spatial transcriptomics** of postmortem human cerebellar tissue. Cell-type-specific gene expression was deconvolved, ranked by differential expression, and z-scored across samples.
+
+**Samples**: 8 postmortem cerebellar specimens spanning GA 26, 27, 30, 34, 38, 38, 39, 40 weeks.
+
+**Input file**: `Supplementary_Datasets/Dataset_RNAScope.xlsx`, sheet `Heatmap_ZScores`.
+
+## Data Loading
+
+```{r load-data}
+zscore_df <- read_excel(find_dataset("Dataset_RNAScope.xlsx"), sheet = "Heatmap_ZScores")
+```
+
+## Source Data -- Z-Scored Expression (All Top 20 Genes)
+
+```{r source-data}
+zscore_df %>%
+ select(Cell_Type, Rank, Gene, GA_26:GA_40) %>%
+ kable(digits = 2, caption = "Z-scored expression values for all top 20 genes per cell type") %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+ scroll_box(height = "400px")
+```
+
+---
+
+# Shared Helpers
+
+```{r helpers}
+ga_cols <- c("GA_26", "GA_27", "GA_30", "GA_34", "GA_38", "GA_38b", "GA_39", "GA_40")
+ga_labels <- c("26", "27", "30", "34", "38", "38", "39", "40")
+
+# Deck-matched styling: GA axis (numbers + title) placed at TOP; all gene labels
+# plain (the dashed box is the sole highlight for RNAScope-validated genes).
+build_heatmap <- function(data_top, rnascope_genes) {
+ gene_order <- data_top$Gene
+ long_df <- data_top %>%
+ select(Gene, all_of(ga_cols)) %>%
+ pivot_longer(cols = all_of(ga_cols), names_to = "GA_col", values_to = "Zscore") %>%
+ mutate(GA_idx = match(GA_col, ga_cols),
+ Gene = factor(Gene, levels = rev(gene_order)))
+
+ ggplot(long_df, aes(x = GA_idx, y = Gene, fill = Zscore)) +
+ geom_tile(colour = "white", linewidth = 0.3) +
+ scale_fill_gradient2(
+ low = "#2166AC", mid = "white", high = "#B2182B",
+ midpoint = 0, limits = c(-2.5, 2.5),
+ name = "Z-score", breaks = c(-2, -1, 0, 1, 2)
+ ) +
+ scale_x_continuous(breaks = 1:8, labels = ga_labels,
+ expand = c(0, 0), position = "top") +
+ {
+ lapply(rnascope_genes, function(g) {
+ ypos <- which(rev(gene_order) == g)
+ annotate("rect", xmin = 0.5, xmax = 8.5,
+ ymin = ypos - 0.5, ymax = ypos + 0.5,
+ fill = NA, colour = "black", linetype = "dashed", linewidth = 0.5)
+ })
+ } +
+ labs(x = "GA", y = NULL) +
+ theme_minimal(base_size = 10) +
+ theme(
+ axis.text.x = element_text(size = 8),
+ axis.text.y = element_text(size = 8),
+ axis.title.x = element_text(size = 9),
+ axis.title.x.top = element_text(size = 9, margin = margin(b = 4)),
+ panel.grid = element_blank(),
+ legend.position = "right",
+ legend.key.height = unit(0.8, "cm"),
+ legend.key.width = unit(0.3, "cm"),
+ legend.title = element_text(size = 8),
+ legend.text = element_text(size = 7),
+ plot.margin = margin(5, 5, 5, 5)
+ )
+}
+```
+
+---
+
+# Figure 4A -- Purkinje Cell Heatmap
+
+Top 20 Purkinje cell genes ranked by differential expression. RNAScope-validated genes (**PLP1**, **KLF9**) are highlighted with dashed boxes.
+
+```{r fig-4A, fig.width=5, fig.height=6}
+pc_top <- zscore_df %>% filter(Cell_Type == "Purkinje", Rank == "Top")
+p4A <- build_heatmap(pc_top, rnascope_genes = c("PLP1", "KLF9"))
+print(p4A)
+```
+
+```{r pdf-4A, include=FALSE}
+ggsave("Figure_4A_Purkinje_Heatmap.pdf", p4A, width = 120, height = 150, units = "mm", dpi = 300)
+```
+
+---
+
+# Figure 4E -- Granule Cell Heatmap
+
+Top 20 Granule cell genes ranked by differential expression. RNAScope-validated genes (**TUBB4A**, **GRM4**) are highlighted with dashed boxes.
+
+```{r fig-4E, fig.width=5, fig.height=6}
+gc_top <- zscore_df %>% filter(Cell_Type == "Granule", Rank == "Top")
+p4E <- build_heatmap(gc_top, rnascope_genes = c("TUBB4A", "GRM4"))
+print(p4E)
+```
+
+```{r pdf-4E, include=FALSE}
+ggsave("Figure_4E_Granule_Heatmap.pdf", p4E, width = 120, height = 150, units = "mm", dpi = 300)
+```
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

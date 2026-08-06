@@ -1,0 +1,134 @@
+---
+title: "Table S13 — Effect of infant sex on the postmortem neuropathology analyses"
+subtitle: "Infant sex added as a covariate to each postmortem cerebellar measure (sensitivity analysis)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+suppressMessages({library(readxl); library(dplyr); library(knitr); library(kableExtra)})
+
+# --- Location-agnostic resolver: walk up to a Supplementary_Datasets/ folder, return RELATIVE path ---
+find_data_dir <- function(max_up = 6) {
+  prefix <- "."
+  for (i in 0:max_up) {
+    cand <- file.path(prefix, "Supplementary_Datasets")
+    if (dir.exists(cand)) return(cand)
+    prefix <- file.path(prefix, "..")
+  }
+  stop("Supplementary_Datasets/ not found above ", normalizePath("."))
+}
+DATA <- find_data_dir()
+LAY  <- file.path(DATA, "Dataset_Cerebellar_Layers.xlsx")               # EGL/IGL/ML area + Purkinje density
+MAP  <- file.path(DATA, "Dataset_Cohort_Membership.xlsx")                 # de-identified Paper_ID <-> Sex
+DEN  <- file.path(DATA, "Dataset_EGL_Density.xlsx") # EGL cell density (de-identified)
+
+sexf <- function(x) factor(dplyr::case_match(toupper(trimws(as.character(x))), "M" ~ "Male", "F" ~ "Female",
+                                         .default = NA_character_), levels = c("Female","Male"))
+pf   <- function(p) ifelse(is.na(p), "NA", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))  # P: 3 dp, "<0.001"
+b3   <- function(x) gsub("-", "−", formatC(x, digits = 3, format = "g", flag = "#"))          # 3 sig figs, minus sign
+```
+
+# Overview
+
+Reviewer question: could infant sex confound the postmortem cerebellar findings? For each cerebellar
+measure, the gestational-age (GA) coefficient is estimated **without** and **with** infant sex in the
+model, together with the *P* value for the sex main effect and for two interactions (GA × sex and
+sex × preterm/term). All models use all 77 subjects. The framing is **"is sex a confounder"**, not
+"is there a sex difference": sex is unassociated with the exposure, so it cannot confound.
+
+Five measures are reported — the four cerebellar layer measures plus EGL cell density (the
+reviewer-requested parallel to Purkinje density). IGL and ML densities are secondary computations not
+in the defined parameter set and are not shown.
+
+# Load data and fit models
+
+```{r models}
+# subject-level sex (de-identified map: Paper_ID -> Sex)
+pm  <- read_excel(MAP, sheet = "Postmortem_Cohort") %>%
+  transmute(Subject_ID = as.character(Paper_ID), Sex = sexf(Sex))
+
+# layer measures (normalized to molecular-layer length), joined to sex + group
+lay <- read_excel(LAY, sheet = "Cerebellar_Layers") %>% mutate(Subject_ID = as.character(Subject_ID)) %>%
+  left_join(pm, by = "Subject_ID") %>% filter(!is.na(Sex)) %>%
+  mutate(Group = factor(Group, levels = c("Preterm","Term")))
+axes <- lay %>% distinct(Subject_ID, GA, Sex, Group)
+
+# EGL cell density = summed cells / summed area (per subject), from the density workbook
+ld <- function(sheet, numcol) read_excel(DEN, sheet = sheet) %>%
+  mutate(Subject_ID = as.character(Paper_ID)) %>%
+  group_by(Subject_ID) %>%
+  summarise(num = sum(.data[[numcol]], na.rm = TRUE), area = sum(`Area µm^2`, na.rm = TRUE), .groups = "drop") %>%
+  mutate(density = num / area * 1e6) %>% select(Subject_ID, density)
+
+# assemble one tidy data frame per measure: columns Subject_ID, GA, Sex, Group, y
+nm <- c(EGL_normalized = "EGL area", IGL_normalized = "IGL area",
+        ML_normalized = "ML area", PC_count = "Purkinje cell density")
+DS <- list()
+for (c1 in names(nm))
+  DS[[nm[[c1]]]] <- lay %>% filter(!is.na(.data[[c1]])) %>% transmute(Subject_ID, GA, Sex, Group, y = .data[[c1]])
+DS[["EGL density"]] <- ld("EGL", "Num EGL") %>% inner_join(axes, by = "Subject_ID") %>%
+  filter(!is.na(Sex)) %>% transmute(Subject_ID, GA, Sex, Group, y = density)
+
+# for each measure: GA effect without/with sex, sex P, and the two interaction P values
+fit_row <- function(k) {
+  d  <- DS[[k]]
+  a  <- coef(lm(y ~ GA, d))["GA"]              # GA effect, sex not in model
+  ms <- lm(y ~ GA + Sex, d)                    # + sex
+  mi <- lm(y ~ GA * Sex, d);  ic <- summary(mi)$coefficients
+  ig <- summary(lm(y ~ Sex * Group, d))$coefficients
+  data.frame(measure = k, n = nrow(d),
+             unadj = unname(a), adj = unname(coef(ms)["GA"]),
+             sexp  = summary(ms)$coefficients["SexMale","Pr(>|t|)"],
+             gasex = ic[grep(":", rownames(ic))[1], 4],
+             sexgrp= ig[grep(":", rownames(ig))[1], 4],
+             check.names = FALSE)
+}
+res <- do.call(rbind, lapply(names(DS), fit_row))
+```
+
+# Table S13
+
+```{r tableS13, echo=FALSE}
+units <- c("EGL area"="EGL area (mm² per µm ML)", "IGL area"="IGL area (mm² per µm ML)",
+           "ML area"="ML area (mm² per µm ML)", "Purkinje cell density"="Purkinje cell density (PCs per mm ML)",
+           "EGL density"="EGL density (cells per mm²)")
+
+S13 <- res %>% transmute(
+  `Measure` = unname(units[measure]),
+  `GA β per week, without sex → with sex` = sprintf("%s → %s", b3(unadj), b3(adj)),
+  `Sex P` = pf(sexp),
+  `GA × sex P` = pf(gasex),
+  `Sex × preterm/term P` = pf(sexgrp))
+
+kable(S13, align = c("l","c","c","c","c"),
+      caption = "Table S13. Effect of sex on the postmortem neuropathology analyses.") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Caption statistics (computed, not hard-coded)
+
+```{r caption, echo=FALSE, results="asis"}
+s <- lay %>% distinct(Subject_ID, GA, Sex, Group)
+tb2 <- table(s$Group, s$Sex)
+tt <- t.test(GA ~ Sex, s)
+ga_txt <- sprintf("female %.1f ± %.1f versus male %.1f ± %.1f weeks, P = %s",
+  mean(s$GA[s$Sex=="Female"]), sd(s$GA[s$Sex=="Female"]),
+  mean(s$GA[s$Sex=="Male"]),   sd(s$GA[s$Sex=="Male"]), pf(tt$p.value))
+cat(sprintf("All models include all %d subjects. Sex was not associated with preterm/term status (Fisher exact P = %s) or with GA (%s).\n\n",
+            sum(tb2), pf(fisher.test(tb2)$p.value), ga_txt))
+cat("Abbreviations: EGL, external granule layer; GA, gestational age at birth; IGL, internal granule layer; ML, molecular layer; PC, Purkinje cell; SD, standard deviation.")
+```
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

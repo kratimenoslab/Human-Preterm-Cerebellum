@@ -1,0 +1,135 @@
+---
+title: "Table S20 — Intra-subject correlation between transcriptomic and neuropathological cerebellar metrics"
+subtitle: "Cross-modal CoGAPS CMAP activity vs deep-learning cerebellar layer areas (5 subjects with both modalities)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+suppressMessages({library(data.table); library(readxl); library(dplyr); library(tidyr)
+                  library(knitr); library(kableExtra)})
+
+find_data_dir <- function(sub = ".", max_up = 6) {
+  prefix <- "."
+  for (i in 0:max_up) { cand <- file.path(prefix, "Supplementary_Datasets", sub); if (dir.exists(cand)) return(cand)
+    prefix <- file.path(prefix, "..") }
+  stop("Supplementary_Datasets/", sub, " not found above ", normalizePath("."))
+}
+COG  <- find_data_dir()
+NORM <- file.path(COG, "Dataset_CrossModal_Normalized_Areas.xlsx")
+mn   <- function(s) gsub("-", "−", s)   # typographic minus
+
+# Subjects with BOTH modalities (transcriptomic + neuropathology)
+OVERLAP <- c("934", "1061", "1154", "1210", "4434")
+GRP <- data.frame(Subject = OVERLAP,
+                  Paper_ID = c("Preterm 1", "Term 1", "Preterm 2", "Term 3", "Preterm 52"),
+                  Group    = c("Preterm", "Term", "Preterm", "Term", "Preterm"))
+```
+
+# Overview
+
+For the five postmortem subjects analyzed by **both** modalities, per-subject cerebellar
+maturation-associated pattern (CMAP) activity (transcriptomic) is correlated with normalized cerebellar
+layer surface areas (deep-learning neuropathology). Three biologically matched comparisons are reported:
+
+| Transcriptomic program | Neuropathology metric |
+|---|---|
+| `CMAP_IGL` (mature internal-granule program)   | IGL area |
+| `CMAP_IGL_IMM` (immature internal-granule program) | IGL area |
+| `CMAP_PCL` (Purkinje program)                  | ML area |
+
+Per-subject CMAP activity is the mean over the subject's layer-matched spatial spots. With n = 5 this is
+descriptive only: Spearman ρ summarizes the monotonic rank trend, the leave-one-out range shows each
+estimate's stability, and a two-sided exact-permutation *P* (all 120 permutations) is given for reference.
+
+# Transcriptomic side — per-subject within-layer CMAP activity (CoGAPS)
+
+```{r cogaps}
+# spot x pattern matrix
+P <- fread(file.path(COG, "Dataset_CrossModal_CoGAPS_Patterns.csv")); setnames(P, 1, "pattern")
+mat <- t(as.matrix(P[, -1, with = FALSE])); colnames(mat) <- P$pattern
+pat <- data.table(spot = rownames(mat), mat)
+setnames(pat, c("Pattern_27","Pattern_16","Pattern_17"), c("CMAP_PCL","CMAP_IGL_IMM","CMAP_IGL"))
+# spot metadata (subject, layer, cell type)
+m <- fread(file.path(COG, "Dataset_CrossModal_Spot_Metadata.csv"))
+setnames(m, c("index","Gestational Age (Weeks)"), c("spot","GA"))
+m <- m[Subject != "NA" & !is.na(Subject) & discard == FALSE]
+d <- merge(pat, m, by = "spot"); d[, Subject := as.character(Subject)]
+ga <- d[, .(GA = first(GA)), by = Subject]
+# within-layer means: PCL over Purkinje spots; both granule programs over internal-granule spots
+wl <- rbind(
+  d[Cell_Type == "Purkinje",      .(cmap="CMAP_PCL",     value=mean(CMAP_PCL)),     by=Subject],
+  d[granular_layer == "internal", .(cmap="CMAP_IGL",     value=mean(CMAP_IGL)),     by=Subject],
+  d[granular_layer == "internal", .(cmap="CMAP_IGL_IMM", value=mean(CMAP_IGL_IMM)), by=Subject])
+subj <- merge(merge(GRP, dcast(wl, Subject ~ cmap, value.var = "value"), by="Subject"), ga, by="Subject")
+
+subj[, c("Subject","Paper_ID","Group","GA","CMAP_IGL","CMAP_IGL_IMM","CMAP_PCL")] %>%
+  kbl(digits = 4, caption = "Per-subject within-layer CMAP activity (n = 5).") %>%
+  kable_styling(full_width = FALSE)
+```
+
+# Neuropathology side — normalized layer areas (deep learning)
+
+```{r neuro}
+gab <- read_excel(NORM, sheet = "normalized_areas") %>%
+  transmute(Subject = as.character(Subject), IGL_area = IGL_normalized, ML_area = ML_normalized, n_sections)
+S <- left_join(subj, gab, by = "Subject")
+S[, c("Subject","Paper_ID","Group","GA","IGL_area","ML_area","n_sections")] %>%
+  kbl(digits = 2, caption = "Normalized neuropathology layer areas for the same 5 subjects.") %>%
+  kable_styling(full_width = FALSE)
+```
+
+# Statistics — Spearman ρ, exact-permutation P, leave-one-out
+
+```{r stats}
+# exact permutation over all 120 orderings of 5 subjects; leave-one-out range
+.all_perms <- function(x) if (length(x) == 1) matrix(x) else
+  do.call(rbind, lapply(seq_along(x), function(i) cbind(x[i], .all_perms(x[-i]))))
+.PERM5 <- .all_perms(1:5)
+rho_stats <- function(x, y) {
+  ok <- !is.na(x) & !is.na(y); x <- x[ok]; y <- y[ok]; n <- length(x)
+  obs <- suppressWarnings(cor(x, y, method = "spearman"))
+  pex <- if (n == 5) mean(apply(.PERM5, 1, function(p)
+             abs(suppressWarnings(cor(x, y[p], method="spearman"))) >= abs(obs) - 1e-9)) else NA_real_
+  loo <- sapply(seq_len(n), function(i) suppressWarnings(cor(x[-i], y[-i], method = "spearman")))
+  data.frame(rho = round(obs,3), n = n, exact_perm_p = round(pex,4),
+             loo_min = round(min(loo),2), loo_max = round(max(loo),2)) }
+
+PAIRS <- list(c("CMAP_IGL","IGL_area","CMAP_IGL vs. IGL area"),
+              c("CMAP_IGL_IMM","IGL_area","CMAP_IGL_IMM vs. IGL area"),
+              c("CMAP_PCL","ML_area","CMAP_PCL vs. ML area"))
+res <- do.call(rbind, lapply(PAIRS, function(p) cbind(comparison = p[3], rho_stats(S[[p[1]]], S[[p[2]]]))))
+```
+
+# Table S20
+
+```{r tableS20, echo=FALSE}
+S20 <- res %>% transmute(
+  `Comparison` = comparison,
+  `Spearman ρ (leave-one-out range)` = mn(sprintf("%.2f (%.2f to %.2f)", rho, loo_min, loo_max)),
+  `Exact-permutation P` = sprintf("%.3f", exact_perm_p))
+
+kable(S20, align = c("l","c","c"),
+      caption = "Table S20. Intra-subject correlation between transcriptomic and neuropathological cerebellar metrics.") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Caption / abbreviations
+
+```{r caption, echo=FALSE, results="asis"}
+cat("Spearman rank correlation coefficients (ρ) between per-subject CMAP activity and normalized cerebellar layer surface areas from deep learning-based neuropathology, in the five postmortem subjects analyzed by both modalities (Preterm 1, 2 and 52; Term 1 and 3). Per-subject CMAP activity is the mean over layer-matched spatial spots; two-sided exact-permutation P values (all 120 permutations) are given for reference.\n\n")
+cat("Abbreviations: CMAP, cerebellar maturation-associated pattern; IGL, internal granule layer; ML, molecular layer.")
+```
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

@@ -1,0 +1,267 @@
+---
+title: "Figure S4 — Covariate robustness of the cerebellar prematurity findings"
+subtitle: "Single-covariate sensitivity analyses (Figure S4A/B) and their tabulated values (Tables S2 and S4)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 150)
+library(dplyr); library(tidyr); library(stringr); library(purrr); library(tibble)
+library(ggplot2); library(knitr); library(kableExtra); library(readxl)
+
+# --- Location-agnostic resolver: walk up to a Supplementary_Datasets/ folder, return RELATIVE path ---
+find_data_dir <- function(subdir = ".", max_up = 6) {
+  prefix <- "."
+  for (i in 0:max_up) {
+    cand <- file.path(prefix, "Supplementary_Datasets", subdir)
+    if (dir.exists(cand)) return(cand)
+    prefix <- file.path(prefix, "..")
+  }
+  stop("Supplementary_Datasets/", subdir, " not found above ", normalizePath("."))
+}
+SRC <- find_data_dir()
+ALPHA <- 0.05
+
+# Deck palette: retained = pink (forest points / grid tiles); not retained = grey.
+COL_RETAIN_PT   <- "#DE1567"   # panel A points/lines (retained) — deck 2026-08 pink
+COL_RETAIN_TILE <- "#DE1567"   # panel B tiles (retained) — deck 2026-08 pink
+COL_NOTRETAIN   <- "#8A8A8A"   # not retained after adjustment (both panels) — deck 2026-08 grey
+LVL <- c("Association retained (P < 0.05)", "Not retained after adjustment")
+
+WB   <- file.path(SRC, "Dataset_Covariate_Robustness.xlsx")   # consolidated: one sheet per former CSV
+rd   <- function(f) as.data.frame(read_excel(WB, sheet = sub("[.]csv$", "", f)))
+# strip punctuation/case so labels from different files join reliably
+norm <- function(s) sub("^x(?=[a-z])", "", gsub("[^a-z0-9]", "", tolower(s)), perl = TRUE)
+```
+
+# Overview
+
+Each clinical covariate is added to the base model **one at a time**; we ask whether the finding
+of interest survives that single adjustment. This report is the code + data provenance for two
+supplementary outputs that share the same source (single-covariate model summaries):
+
+* **Figure S4A / Table S2** — the gestational-age (GA) effect on term-equivalent cerebellar MRI
+  volume (mm³ per week) under each single-covariate adjustment. Panel A plots it as a forest;
+  Table S2 tabulates the same β, 95% CI, *P* and *n*.
+* **Figure S4B / Table S4** — GA and cerebellar volume as predictors of neurodevelopmental delay
+  (motor / cognitive / language). Panel B plots the *P*-value grids; Table S4 tabulates the GA→delay
+  *P*, the cerebellar-volume→delay odds ratio (95% CI) and its Wald *P*.
+
+In the figures, *pink* = association retained (`P < 0.05`), *grey* = not retained after adjustment.
+Panels are exported as **separate files** (never combined in code) so they can be arranged by hand.
+The tables below are rendered **inline from the same data** — no Word/Excel file is produced here
+(the submission copies of Tables S2/S4 are maintained separately and are not written by this report).
+
+# Load model summaries
+
+```{r load}
+gv   <- function(m, k) if (k %in% names(m)) unname(m[[k]]) else NA_real_
+pcol <- function(d, col) setNames(d[[col]], norm(d$Covariate))
+
+# GA -> cerebellar volume (one row per covariate): beta / CI / P / N
+vol <- rd("1 CerebVol vs GA.csv"); vol$key <- norm(vol$Covariate)
+
+# GA -> neurodevelopmental delay (LRT P per domain) and volume -> delay (Wald P per domain)
+P <- list(
+  ga_mot = pcol(rd("2 Motor_Delay vs GA.csv"),     "P.Value"),
+  ga_cog = pcol(rd("2 Cognitive_Delay vs GA.csv"), "P.Value"),
+  ga_lan = pcol(rd("2 Language_Delay vs GA.csv"),  "P.Value"),
+  cv_mot = pcol(rd("3 Motor_Delay vs CerebVol_k.csv"),     "P.CerebVol_k"),
+  cv_cog = pcol(rd("3 Cognitive_Delay vs CerebVol_k.csv"), "P.CerebVol_k"),
+  cv_lan = pcol(rd("3 Language_Delay vs CerebVol_k.csv"),  "P.CerebVol_k"))
+
+# master frame used by the figure panels (GA->volume + delay p-values, keyed by covariate)
+master <- vol %>%
+  transmute(raw_label = Covariate, key = norm(Covariate),
+            beta = Beta.GA, lo = CI.Low, hi = CI.High, P_volume = P.GA, N = N) %>%
+  rowwise() %>%
+  mutate(GA_motor = gv(P$ga_mot, key), GA_cog = gv(P$ga_cog, key), GA_lang = gv(P$ga_lan, key),
+         CV_motor = gv(P$cv_mot, key), CV_cog = gv(P$cv_cog, key), CV_lang = gv(P$cv_lan, key)) %>%
+  ungroup()
+```
+
+# Curated covariate set (Figure S4)
+
+```{r curated}
+CURATED <- tribble(
+  ~display,                        ~source,
+  "Maternal delivery indication",  "Indication [Spont/Maternal/Unk]",
+  "Surgical NEC",                  "NEC Surgical [Y/N/Unk]",
+  "Cumulative burden of BPD",      "BPD_score",
+  "Cumulative burden of sepsis",   "Sepsis_score",
+  "Magnesium sulfate",             "Magnesium sulfate [Y/N/Unk]",
+  "Caffeine",                      "Caffeine [Y/N/Unk]",
+  "Glycemic control",              "Glucose TIR",
+  "Cumulative procedural pain",    "PIPP (cumulative)") %>%
+  mutate(key = norm(source), display = factor(display, levels = display))
+```
+
+# Figure S4A — GA → cerebellar volume (forest)
+
+```{r panelA, fig.width=5.9, fig.height=4.6}
+forest_df <- CURATED %>% left_join(master, by = "key") %>%
+  mutate(row = factor(display, levels = rev(levels(display))),
+         status = factor(ifelse(P_volume < ALPHA, LVL[1], LVL[2]), levels = LVL))
+
+pA <- ggplot(forest_df, aes(y = row)) +
+  geom_vline(xintercept = 0, linetype = "22", colour = "#9A9A9A") +
+  geom_linerange(aes(xmin = lo, xmax = hi, colour = status), linewidth = 1.1,
+                 show.legend = FALSE) +
+  geom_point(aes(x = beta, fill = status), shape = 21, size = 3.4,
+             colour = "white", stroke = 0.9) +
+  scale_colour_manual(values = c(COL_RETAIN_PT, COL_NOTRETAIN) %>% setNames(LVL),
+                      drop = FALSE, guide = "none") +
+  scale_fill_manual(values = c(COL_RETAIN_PT, COL_NOTRETAIN) %>% setNames(LVL),
+                    breaks = LVL, limits = LVL, drop = FALSE, name = NULL) +
+  scale_x_continuous(breaks = c(0, 200, 400, 600)) +
+  guides(fill = guide_legend(nrow = 1,
+         override.aes = list(shape = 21, size = 4, colour = "white"))) +
+  labs(title = "Gestational age effect on cerebellar volume",
+       x = "Adjusted gestational-age effect on\ncerebellar volume (mm³ per week, 95% CI)",
+       y = NULL) +
+  coord_cartesian(clip = "off") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank(), panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_line(colour = "#EFEFEF"),
+        panel.border = element_rect(colour = "#B0B0B0", fill = NA, linewidth = 0.3),
+        plot.title = element_text(face = "bold", size = 12.5, hjust = 0.5),
+        axis.text.y = element_text(colour = "#222222", size = 10.5),
+        axis.title.x = element_text(size = 9.5, colour = "#333333"),
+        legend.position = "bottom", legend.text = element_text(size = 9),
+        plot.margin = margin(t = 8, r = 12, b = 6, l = 6))
+ggsave("Figure_S4A_Forest_GA_Volume.pdf", pA, width = 5.9, height = 4.6, device = cairo_pdf, bg = "white")
+pA
+```
+
+# Figure S4B — p-value grids
+
+```{r panelB, fig.width=7.4, fig.height=4.6}
+grid_df <- CURATED %>% left_join(master, by = "key") %>%
+  transmute(display,
+            `Gestational age.Motor` = GA_motor, `Gestational age.Cognitive` = GA_cog,
+            `Gestational age.Language` = GA_lang,
+            `Cerebellar volume.Motor` = CV_motor, `Cerebellar volume.Cognitive` = CV_cog,
+            `Cerebellar volume.Language` = CV_lang) %>%
+  pivot_longer(-display, names_to = c("block", "domain"), names_sep = "\\.", values_to = "p") %>%
+  mutate(row = factor(display, levels = rev(levels(CURATED$display))),
+         block = factor(block, levels = c("Gestational age", "Cerebellar volume")),
+         domain = factor(domain, levels = c("Motor", "Cognitive", "Language")),
+         sig = !is.na(p) & p < ALPHA,
+         status = factor(ifelse(sig, LVL[1], LVL[2]), levels = LVL),
+         label = ifelse(is.na(p), "—", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p))))
+
+blk_lab <- as_labeller(c(
+  `Gestational age` = "Gestational age effect on\nneurodevelopmental delay",
+  `Cerebellar volume` = "Cerebellar volume as a predictor\nof neurodevelopmental delay"))
+
+pB <- ggplot(grid_df, aes(domain, row, fill = status)) +
+  geom_tile(colour = "white", linewidth = 1.0, width = 0.94, height = 0.9) +
+  geom_text(aes(label = label), colour = "white", size = 3) +
+  facet_grid(~ block, labeller = blk_lab) +
+  scale_fill_manual(values = c(COL_RETAIN_TILE, COL_NOTRETAIN) %>% setNames(LVL),
+                    breaks = LVL, limits = LVL, name = NULL) +
+  scale_x_discrete(labels = c(Motor = "Motor\ndelay", Cognitive = "Cognitive\ndelay",
+                              Language = "Language\ndelay"),
+                   expand = expansion(add = 0.5)) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid = element_blank(),
+        axis.text.y = element_text(colour = "#222222", size = 10.5),
+        axis.text.x = element_text(size = 9, lineheight = 0.9),
+        panel.spacing.x = unit(14, "pt"),
+        strip.text = element_text(face = "bold", size = 10.5, lineheight = 0.95),
+        legend.position = "bottom", legend.text = element_text(size = 9))
+ggsave("Figure_S4B_Pvalue_Grids.pdf", pB, width = 7.4, height = 4.6, device = cairo_pdf, bg = "white")
+pB
+```
+
+# Table S2 — GA effect on cerebellar volume, adjusted for individual clinical factors
+
+Rendered inline from the same model summaries used by Figure S4A (values match the submitted Table S2).
+
+```{r tableS2, echo=FALSE}
+volm <- vol %>% mutate(key = norm(Covariate))
+
+s2_map <- tribble(
+  ~label,                                                    ~src,
+  "Maternal delivery indication",                            "Indication [Spont/Maternal/Unk]",
+  "Surgical necrotizing enterocolitis (NEC)",                "NEC Surgical [Y/N/Unk]",
+  "Cumulative burden of bronchopulmonary dysplasia (BPD)",   "BPD_score",
+  "Cumulative burden of sepsis",                             "Sepsis_score",
+  "Magnesium sulfate exposure",                              "Magnesium sulfate [Y/N/Unk]",
+  "Caffeine exposure",                                       "Caffeine [Y/N/Unk]",
+  "Glycemic control (glucose time in range, 70–180 mg/dL)", "Glucose TIR",
+  "Cumulative procedural pain (PIPP)",                       "PIPP (cumulative)") %>%
+  mutate(key = norm(src))
+
+S2 <- s2_map %>% left_join(volm, by = "key") %>%
+  transmute(`Clinical factor adjusted for` = label,
+            `GA β (mm³ per week)` = sprintf("%.1f", Beta.GA),
+            `95% CI` = sprintf("%.1f to %.1f", CI.Low, CI.High),
+            `P` = sprintf("%.3f", P.GA),
+            `n` = as.integer(N))
+
+kable(S2, align = c("l","r","c","r","r"),
+      caption = "Table S2. Gestational age effect on term-equivalent age cerebellar volume after adjustment for individual clinical factors (in vivo cohort).") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Table S4 — GA and cerebellar volume as predictors of neurodevelopmental delay, adjusted
+
+Rendered inline from the same model summaries used by Figure S4B (values match the submitted Table S4).
+
+```{r tableS4, echo=FALSE}
+DOMAINS <- c("Motor","Cognitive","Language")
+
+ga_delay <- map_dfr(DOMAINS, function(dm){
+  d <- rd(sprintf("2 %s_Delay vs GA.csv", dm))
+  tibble(key = norm(d$Covariate), domain = dm, ga_p = d$P.Value)
+})
+cv_delay <- map_dfr(DOMAINS, function(dm){
+  d <- rd(sprintf("3 %s_Delay vs CerebVol_k.csv", dm))
+  tibble(key = norm(d$Covariate), domain = dm,
+         OR = d$OR, lo = d$CI.Low, hi = d$CI.High, wald = d$P.CerebVol_k)
+})
+
+s4_map <- tribble(
+  ~label,                                            ~src,
+  "Delivery indication (spontaneous vs maternal)",   "Indication [Spont/Maternal/Unk]",
+  "Surgical necrotizing enterocolitis",              "NEC Surgical [Y/N/Unk]",
+  "Sepsis burden",                                   "Sepsis_score",
+  "Bronchopulmonary dysplasia burden",               "BPD_score",
+  "Glycemic control (glucose time-in-range)",        "Glucose TIR",
+  "Cumulative procedural pain (PIPP)",               "PIPP (cumulative)",
+  "Magnesium sulfate",                               "Magnesium sulfate [Y/N/Unk]",
+  "Caffeine",                                        "Caffeine [Y/N/Unk]") %>%
+  mutate(key = norm(src))
+
+S4 <- s4_map %>% crossing(domain = DOMAINS) %>%
+  left_join(ga_delay, by = c("key","domain")) %>%
+  left_join(cv_delay, by = c("key","domain")) %>%
+  mutate(label = factor(label, levels = s4_map$label),
+         domain = factor(domain, levels = DOMAINS)) %>%
+  arrange(label, domain) %>%
+  transmute(`Covariate adjusted for` = as.character(label),
+            `Delay domain` = as.character(domain),
+            `GA → delay, P` = sprintf("%.3f", ga_p),
+            `Cerebellar volume → delay, OR (95% CI)` = sprintf("%.2f (%.2f, %.2f)", OR, lo, hi),
+            `Wald P` = ifelse(wald < 0.001, "<0.001", sprintf("%.3f", wald)))
+
+kable(S4, align = c("l","c","c","c","c"),
+      caption = "Table S4. Gestational age and cerebellar volume as predictors of neurodevelopmental delay, adjusted for individual clinical covariates (in vivo cohort).") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE) %>%
+  collapse_rows(columns = 1, valign = "top")
+```
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

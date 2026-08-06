@@ -1,0 +1,157 @@
+---
+title: "Figure S17 (A-D) -- spatial-transcriptomics Z-score heatmaps"
+subtitle: "Purkinje (A,C) and Granule (B,D) top-20 genes vs gestational age at birth (A,B) and chronological age at death (C,D)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+library(dplyr); library(tidyr); library(ggplot2); library(readr)
+
+# --- Location-agnostic resolver: walk up to Supplementary_Datasets/Figure_S17/ ---
+find_s17 <- function(fname, subdir = ".", max_up = 6) {
+ prefix <- "."
+ for (i in 0:max_up) {
+ cand <- file.path(prefix, "Supplementary_Datasets", subdir, fname)
+ if (file.exists(cand)) return(cand)
+ prefix <- file.path(prefix, "..")
+ }
+ stop(fname, " not found under any Supplementary_Datasets/", subdir, "/ above ", normalizePath("."))
+}
+```
+
+# Overview
+
+Panels **A-D** are Z-scored spatial-transcriptomics gene-expression heatmaps across the 8 post-mortem
+cerebellar samples, for the two neuronal populations:
+
+| Panel | Cells | Ordered / labelled by |
+|-------|-------|-----------------------|
+| **A** | Purkinje | gestational age **at birth** (26-40 wk) |
+| **B** | Granule | gestational age **at birth** |
+| **C** | Purkinje | chronological age **at death** (9-20 wk) |
+| **D** | Granule | chronological age **at death** |
+
+**Reproducibility note.** The sample-averaged Z-score matrices (`Dataset_SpatialTx_ZScores.xlsx` sheets `PC_zScore`, `GC_zScore`) and the
+8-sample age metadata (sheet `sample_meta`) are the local outputs of the CoGAPS/spatial-transcriptomics pipeline; these panels are
+rebuilt here from those files. The per-gene **linear-model coefficients** used for panels **E/F** (and for the
+top-20 gene *selection*) come from the version15 lmer pipeline that reads the raw Seurat object on the
+`<data_path> server (see `pipeline_code_EF/`, do-not-edit) — those are **not locally regenerable**, so the
+gene lists below are taken from that pipeline's output (the deck) and the Z-scores are read from local data.
+
+# Data
+
+```{r data}
+WB17 <- find_s17("Dataset_SpatialTx_ZScores.xlsx")     # consolidated: sample_meta + PC/GC z-score sheets
+read_z <- function(sheet) {
+ m <- as.data.frame(readxl::read_excel(WB17, sheet = sheet))
+ names(m)[1] <- "Gene"
+ m
+}
+PC <- read_z("PC_zScore")
+GC <- read_z("GC_zScore")
+meta <- readxl::read_excel(WB17, sheet = "sample_meta") %>%
+ mutate(sample = as.character(sample),
+ chron = Age_at_death_wk - GA_birth_wk) # chronological age at death (weeks lived)
+meta # 8 samples: GA at birth + age at death + chronological age
+```
+
+```{r genesets}
+# Gene lists (top-20 per panel) from the version15 lmer ranking (pipeline output / deck).
+genes_A <- c("HSPB1","RPS24","CST3","RPS12","RPL19","RPS13","ZFAS1","RPL32","RPS8","RPS5",
+ "RPS4X","HBB","RPL18A","HBG2","HBA2","MT3","DNAJB1","HSPA1B","RPS26","HSPA1A")
+genes_B <- c("RPS8","RPS5","DISP3","C11orf96","UCHL1","CST3","HSPB1","RPL18A","RPRM","SLITRK2",
+ "TMSB10","VSTM2A","MT3","VSTM2L","FOS","NNAT","DNAJB1","RPS26","HSPA1B","HSPA1A")
+genes_C <- c("MBP","CBLN3","PLP1","CHGB","VSNL1","TUBB4A","SNAP25","SLC17A7","ETV1","HPCAL1",
+ "FAT2","GABRA1","MICAL2","GRM4","SYNPR","NRXN2","PTK2B","ABLIM1","KLF9","MT-ND4L")
+genes_D <- c("CBLN3","TUBB4A","CAMKK2","VSNL1","PLCH2","GRM4","OLFM1","TPM4","MTCL1","CALN1",
+ "TIAM1","CDH23","SNAP25","PTK2B","SLC17A7","GRIN2C","ETV1","PRUNE2","PLP1","DAB2IP")
+```
+
+# Heatmap builder (deck style)
+
+```{r builder}
+# order_col: "GA_birth_wk" (columns by gestational age at birth) or "chron" (chronological age at death)
+build_hm <- function(mat, genes, order_col, x_title) {
+ ord <- meta %>% arrange(.data[[order_col]])
+ samp <- ord$sample
+ labs_x <- as.character(round(ord[[order_col]]))
+
+ long <- mat %>% filter(Gene %in% genes) %>%
+ select(Gene, all_of(samp)) %>%
+ pivot_longer(-Gene, names_to = "sample", values_to = "Z") %>%
+ mutate(xi = match(sample, samp),
+ Gene = factor(Gene, levels = rev(genes)))
+
+ ggplot(long, aes(xi, Gene, fill = Z)) +
+ geom_tile(colour = "white", linewidth = 0.3) +
+ scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+ midpoint = 0, limits = c(-2.5, 2.5),
+ name = "Z-score", breaks = c(-2, -1, 0, 1, 2)) +
+ scale_x_continuous(breaks = seq_along(samp), labels = labs_x,
+ expand = c(0, 0), position = "top") +
+ labs(x = x_title, y = NULL) +
+ theme_minimal(base_size = 9) +
+ theme(axis.text.x = element_text(size = 7),
+ axis.text.y = element_text(size = 7),
+ axis.title.x.top = element_text(size = 8, margin = margin(b = 4)),
+ panel.grid = element_blank(),
+ legend.key.height = unit(0.7, "cm"), legend.key.width = unit(0.28, "cm"),
+ legend.title = element_text(size = 7.5), legend.text = element_text(size = 6.5),
+ plot.margin = margin(5, 5, 5, 5))
+}
+save_panel <- function(p, stem) {
+ ggsave(paste0(stem, ".pdf"), p, width = 90, height = 130, units = "mm", dpi = 300, device = cairo_pdf)
+}
+```
+
+# Panel A -- Purkinje, gestational age at birth
+
+```{r figA, fig.width=3.6, fig.height=5.1}
+pA <- build_hm(PC, genes_A, "GA_birth_wk", "Gestational age at birth (weeks)")
+print(pA); save_panel(pA, "Figure_S17A_Purkinje_GAbirth")
+```
+
+# Panel B -- Granule, gestational age at birth
+
+```{r figB, fig.width=3.6, fig.height=5.1}
+pB <- build_hm(GC, genes_B, "GA_birth_wk", "Gestational age at birth (weeks)")
+print(pB); save_panel(pB, "Figure_S17B_Granule_GAbirth")
+```
+
+# Panel C -- Purkinje, chronological age at death
+
+```{r figC, fig.width=3.6, fig.height=5.1}
+pC <- build_hm(PC, genes_C, "chron", "Post-menstrual at death (weeks)")
+print(pC); save_panel(pC, "Figure_S17C_Purkinje_AgeAtDeath")
+```
+
+# Panel D -- Granule, chronological age at death
+
+```{r figD, fig.width=3.6, fig.height=5.1}
+pD <- build_hm(GC, genes_D, "chron", "Post-menstrual at death (weeks)")
+print(pD); save_panel(pD, "Figure_S17D_Granule_AgeAtDeath")
+```
+
+# Panels E/F (server-only)
+
+Panels **E** (PC) and **F** (GC) plot each gene's **gestational-age-at-birth coefficient** against its
+**age-at-death coefficient** from the version15 lmer models. Those coefficients are produced by
+`pipeline_code_EF/linear_model_subsetSamples{PC,GC}.R`, which read the raw Seurat object from `<data_path>
+and are therefore **not locally regenerable** (only the Purkinje GA-coefficient table is available locally).
+They are shipped as do-not-edit code plus (pending) the rendered panels from the server pipeline — see
+`_provenance.md`.
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

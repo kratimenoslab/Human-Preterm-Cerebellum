@@ -1,0 +1,81 @@
+---
+title: "Table S5 — Gestational age group × post-menstrual age interaction in coronal cerebellar ultrasound growth, adjusted"
+subtitle: "Single-covariate sensitivity: does the PMA × GA-group interaction survive adjusting for one clinical factor at a time?"
+author: "Kratimenos Lab"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+suppressMessages({library(dplyr); library(tibble); library(knitr); library(kableExtra); library(readxl)})
+
+find_data_dir <- function(sub = ".", max_up = 6) {
+  prefix <- "."
+  for (i in 0:max_up) { cand <- file.path(prefix, "Supplementary_Datasets", sub); if (dir.exists(cand)) return(cand)
+    prefix <- file.path(prefix, "..") }
+  stop("Supplementary_Datasets/", sub, " not found above ", normalizePath("."))
+}
+SRC  <- find_data_dir()
+WB   <- file.path(SRC, "Dataset_Covariate_Robustness.xlsx")   # consolidated: one sheet per former CSV
+norm <- function(s) sub("^x(?=[a-z])", "", gsub("[^a-z0-9]", "", tolower(s)), perl = TRUE)
+```
+
+# Overview
+
+Longitudinal coronal cerebellar ultrasound growth was modelled by linear mixed-effects regression with
+a random intercept and post-menstrual-age (PMA) slope per infant. For each clinical factor, a base model
+(*PMA + gestational-age (GA) group + factor*) was compared with a model additionally including the
+*PMA × GA-group* interaction by likelihood-ratio test. The table reports, per factor, the χ² statistic,
+the *P* value, and the number of scans (infants). The interaction is not retained under any single
+adjustment (all *P* > 0.05).
+
+# Load model summaries
+
+```{r load}
+us <- as.data.frame(read_excel(WB, sheet = "4 Coronal US growth vs GA"))
+us$key <- norm(us$Covariate)
+```
+
+# Table S5
+
+```{r tableS5, echo=FALSE}
+s5_map <- tribble(
+  ~label,                                                    ~src,
+  "Maternal delivery indication",                            "Indication [Spont/Maternal/Unk]",
+  "Surgical necrotizing enterocolitis (NEC)",                "NEC Surgical [Y/N/Unk]",
+  "Cumulative burden of bronchopulmonary dysplasia (BPD)",   "BPD_score",
+  "Cumulative burden of sepsis",                             "Sepsis_score",
+  "Magnesium sulfate exposure",                              "Magnesium sulfate [Y/N/Unk]",
+  "Caffeine exposure",                                       "Caffeine [Y/N/Unk]",
+  "Glycemic control (glucose time in range, 70–180 mg/dL)", "Glucose TIR",
+  "Cumulative procedural pain (PIPP)",                       "PIPP (cumulative)") %>%
+  mutate(key = norm(src))
+
+S5 <- s5_map %>% left_join(us, by = "key") %>%
+  transmute(`Clinical factor adjusted for` = label,
+            `χ²` = sprintf("%.2f", Chi.Square),
+            `P` = sprintf("%.3f", P.Value),
+            `Scans (infants)` = sprintf("%d (%d)", as.integer(N), as.integer(Subjects)))
+
+kable(S5, align = c("l","c","c","c"),
+      caption = "Table S5. Gestational age group × post-menstrual age interaction in coronal cerebellar ultrasound growth after adjustment for individual clinical factors (in vivo cohort).") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Abbreviations
+
+```{r abbrev, echo=FALSE, results="asis"}
+cat("Abbreviations: BPD, bronchopulmonary dysplasia; GA, gestational age at birth; NEC, necrotizing enterocolitis; PIPP, Premature Infant Pain Profile; PMA, post-menstrual age.")
+```
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

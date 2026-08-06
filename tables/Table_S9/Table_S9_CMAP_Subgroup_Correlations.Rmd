@@ -1,0 +1,114 @@
+---
+title: "Table S9 — Correlation of CMAP activity with gestational and post-menstrual age within clinical subgroups"
+subtitle: "Spearman correlations of subject-level CoGAPS CMAP activity with GA and PMA, by clinical stratum"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+suppressMessages({library(readxl); library(dplyr); library(knitr); library(kableExtra)})
+
+find_data_dir <- function(sub = ".", max_up = 6) {
+  prefix <- "."
+  for (i in 0:max_up) { cand <- file.path(prefix, "Supplementary_Datasets", sub); if (dir.exists(cand)) return(cand)
+    prefix <- file.path(prefix, "..") }
+  stop("Supplementary_Datasets/", sub, " not found above ", normalizePath("."))
+}
+DIR  <- find_data_dir()
+WB   <- file.path(DIR, "Dataset_CMAP_Subgroup_Correlations.xlsx")   # consolidated: correlations + metrics + subgroups
+mn   <- function(x) gsub("-", "−", sprintf("%.3f", x))   # 3 dp, typographic minus
+```
+
+# Overview
+
+Subject-level CoGAPS cerebellar maturation-associated pattern (CMAP) activity is correlated (Spearman)
+with **gestational age at birth (GA)** and **post-menstrual age at death (PMA)** across the spatial
+transcriptomic cohort and within clinical strata. Patterns map as **H-16 = CMAP_IGL_IMM**,
+**H-17 = CMAP_IGL**, **H-27 = CMAP_PCL**. Coefficients are descriptive (n small); no P values are reported.
+
+Subgroup analyses are restricted to clinical strata containing **≥ 5 subjects**, since correlation
+estimates become unstable at smaller sample sizes; strata below that threshold are not shown.
+
+# Data
+
+All inputs are consolidated in `Dataset_CMAP_Subgroup_Correlations.xlsx` (one sheet each):
+* sheets `ga_correlations`, `pma_correlations` — Spearman ρ per subgroup for each pattern (H-16/17/27),
+  from the CoGAPS subgroup analysis (subject-level CMAP activity vs GA / vs PMA).
+* sheet `spatial_cohort_subgroups` — de-identified per-subject subgroup membership, used only to count each
+  stratum's *n*.
+* sheet `allsubjects_cmap_metrics` — de-identified per-subject CMAP activity + GA + PMA for the 11-subject
+  full cohort (from the cross-modal concordance analysis; 2099 excluded). The **All-subjects (full-cohort)
+  row** is computed from it here (Spearman ρ of each pattern vs GA and vs PMA) — not taken from the
+  subgroup-restricted correlation files.
+
+```{r load}
+rowlab <- function(sheet) { d <- as.data.frame(read_excel(WB, sheet = sheet)); rownames(d) <- d[[1]]; d[[1]] <- NULL; d }
+ga  <- rowlab("ga_correlations")    # subgroup-row x pattern-col Spearman matrix (first col = row label)
+pma <- rowlab("pma_correlations")
+meta <- read_excel(WB, sheet = "spatial_cohort_subgroups")
+asm  <- as.data.frame(read_excel(WB, sheet = "allsubjects_cmap_metrics"))   # per-subject CMAP + GA + PMA (n = 11)
+
+# subgroup code (row in the correlation files) -> display label + membership rule (for n)
+SUBGROUPS <- tibble::tribble(
+  ~code,                          ~label,                                    ~rule,
+  "preterm 1",                    "Preterm",                                 quote(preterm == 1),
+  "sex_male 1",                   "Male",                                    quote(sex_male == 1),
+  "sex_male 0",                   "Female",                                  quote(sex_male == 0),
+  "nec 0",                        "Without NEC",                             quote(nec == 0),
+  "sepsis 0",                     "Without sepsis",                          quote(sepsis == 0),
+  "chorio_or_infection_any 0",    "Without chorioamnionitis or infection",   quote(chorio_or_infection_any == 0),
+  "preeclampsia 0",               "Without preeclampsia",                    quote(preeclampsia == 0),
+  "hypoxia_vent 0",               "Without ventilatory support",             quote(hypoxia_vent == 0),
+  "spontaneous_birth 1",          "With spontaneous onset of labor",         quote(spontaneous_birth == 1))
+
+# full-cohort ('All subjects') row — computed here: Spearman ρ of each pattern vs GA and vs PMA (n = 11)
+scor <- function(pat, age) round(unname(suppressWarnings(cor(asm[[pat]], asm[[age]], method = "spearman"))), 3)
+ALL_SUBJECTS <- list(
+  label = "All subjects", n = nrow(asm),
+  IGL_IMM_GA = scor("CMAP_IGL_IMM","GA_wk"), IGL_IMM_PMA = scor("CMAP_IGL_IMM","PMA_wk"),
+  IGL_GA     = scor("CMAP_IGL","GA_wk"),     IGL_PMA     = scor("CMAP_IGL","PMA_wk"),
+  PCL_GA     = scor("CMAP_PCL","GA_wk"),     PCL_PMA     = scor("CMAP_PCL","PMA_wk"))
+```
+
+# Table S9
+
+```{r tableS9, echo=FALSE}
+rows <- list(with(ALL_SUBJECTS, c(label, as.character(n),
+             mn(IGL_IMM_GA), mn(IGL_IMM_PMA), mn(IGL_GA), mn(IGL_PMA), mn(PCL_GA), mn(PCL_PMA))))
+for (i in seq_len(nrow(SUBGROUPS))) {
+  cd <- SUBGROUPS$code[i]
+  n  <- sum(eval(SUBGROUPS$rule[[i]], meta))
+  rows[[length(rows)+1]] <- c(
+    SUBGROUPS$label[i], as.character(n),
+    mn(ga[cd,"Pattern_16"]), mn(pma[cd,"Pattern_16"]),   # CMAP_IGL_IMM (H-16)
+    mn(ga[cd,"Pattern_17"]), mn(pma[cd,"Pattern_17"]),   # CMAP_IGL     (H-17)
+    mn(ga[cd,"Pattern_27"]), mn(pma[cd,"Pattern_27"]))   # CMAP_PCL     (H-27)
+}
+S9 <- as.data.frame(do.call(rbind, rows), stringsAsFactors = FALSE)
+names(S9) <- c("Subjects included","n","GA","PMA","GA ","PMA ","GA  ","PMA  ")
+
+kable(S9, align = c("l","c","c","c","c","c","c","c"),
+      caption = "Table S9. Correlation of CMAP activity with gestational and post-menstrual age within clinical subgroups.") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE) %>%
+  add_header_above(c(" " = 2, "CMAP_IGL_IMM" = 2, "CMAP_IGL" = 2, "CMAP_PCL" = 2))
+```
+
+# Caption / abbreviations
+
+```{r caption, echo=FALSE, results="asis"}
+cat("Spearman rank-correlation coefficients (ρ) between subject-level CMAP activity and gestational age at birth (GA) or post-menstrual age at death (PMA). The first row is the full cohort; each subsequent row is restricted to the subjects indicated. Coefficients are descriptive; no P values are reported.\n\n")
+cat("Abbreviations: CMAP, cerebellar maturation-associated pattern; GA, gestational age at birth; NEC, necrotizing enterocolitis; PMA, post-menstrual age at death.")
+```
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```
