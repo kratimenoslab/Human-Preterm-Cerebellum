@@ -23,6 +23,7 @@ produced by, or derived from, the upstream analysis pipelines in the repository'
 | Figure | Produced by / derived from | Note |
 |---|---|---|
 | **Figure 2** | `/CoGAPS` + `/Tricycle` + `/LinearModel` | server-side pipeline; see `Figure_2/SOURCE.md` |
+| **Fig. S9 (C–E)** | `/CoGAPS` Seurat object | single-gene spatial expression maps (12 genes × 24 slides); see `Figure_S9/single_gene_expression/SOURCE.md` |
 | **Fig. S10** | `/CoGAPS` (`n30_cogaps_fGSEA.Rmd`) | GSEA heatmap plotted from deposited GSEA results |
 | **Fig. S12** | `/LDSC` | dot plot; see `Figure_S12/SOURCE.md` |
 | **Fig. S18 (E–F)** | `/LinearModel` | coefficient scatter; heatmaps A–D are local; see `Figure_S18/SOURCE.md` |
