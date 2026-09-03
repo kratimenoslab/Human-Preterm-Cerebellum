@@ -67,12 +67,12 @@ RNAScope ISH was performed on **4 postmortem cerebellar specimens** using multip
 (one score per Gene x Patient x ROI; ~5 ROIs per patient). Plots show individual ROI values with
 mean +/- SEM. Granule-cell panels (G, H) use **IGL (Internal Granular Layer)** cells only.
 
-**Input file**: `Supplementary_Datasets/Dataset_RNAScope.xlsx`, sheet `H_Score_ROI`.
+**Input file**: `Supplementary_Datasets/Data_S5_InSitu_Validation.xlsx`, sheet `H_Score_ROI`.
 
 ## Data Loading
 
 ```{r load-data}
-hscore_roi <- read_excel(find_dataset("Dataset_RNAScope.xlsx"), sheet = "H_Score_ROI")
+hscore_roi <- read_excel(find_dataset("Data_S5_InSitu_Validation.xlsx"), sheet = "H_Score_ROI")
 ```
 
 ## Source Data -- Summary

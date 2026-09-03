@@ -22,7 +22,7 @@ find_data_dir <- function(sub = ".", max_up = 6) {
   stop("Supplementary_Datasets/", sub, " not found above ", normalizePath("."))
 }
 SRC  <- find_data_dir()
-WB   <- file.path(SRC, "Dataset_Covariate_Robustness.xlsx")   # consolidated: one sheet per former CSV
+WB   <- file.path(SRC, "Data_S1_InVivo_Cohort.xlsx")   # consolidated: one sheet per former CSV
 norm <- function(s) sub("^x(?=[a-z])", "", gsub("[^a-z0-9]", "", tolower(s)), perl = TRUE)
 ```
 

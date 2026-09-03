@@ -1,0 +1,131 @@
+---
+title: "Figure S11 (B, D) -- VGLUT1 / VGLUT2 positive-area fraction vs gestational age"
+subtitle: "Fraction of the cerebellar molecular-layer ROI occupied by VGLUT1+ (B) and VGLUT2+ (D) signal"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+library(readxl); library(dplyr); library(readr); library(ggplot2)
+
+# --- Location-agnostic resolvers (RELATIVE paths only) ---
+find_data <- function(fname, subdir = NULL, max_up = 6) {
+ prefix <- "."
+ for (i in 0:max_up) {
+ cand <- if (is.null(subdir)) file.path(prefix, "Supplementary_Datasets", fname) else file.path(prefix, "Supplementary_Datasets", subdir, fname)
+ if (file.exists(cand)) return(cand)
+ prefix <- file.path(prefix, "..")
+ }
+ stop(fname, " not found under any Supplementary_Datasets/ folder above ", normalizePath("."))
+}
+find_dir <- function(subdir, max_up = 6) {
+ prefix <- "."
+ for (i in 0:max_up) { cand <- file.path(prefix, "Supplementary_Datasets", subdir); if (dir.exists(cand)) return(cand); prefix <- file.path(prefix, "..") }
+ stop("Supplementary_Datasets/", subdir, " not found above ", normalizePath("."))
+}
+
+VGLUT1_COL <- "#EE6677" # red (VGLUT1 channel)
+VGLUT2_COL <- "#AA3377" # magenta/purple (VGLUT2 channel, matches the deck)
+rlab <- function(r) sprintf('italic(r) == "%.3f"', r)
+```
+
+# Overview
+
+Immunofluorescence quantification in the cerebellar molecular layer (ML): the **fraction of the ML ROI
+occupied by VGLUT+ signal**, per subject, vs gestational age at birth. 8 post-mortem cerebella
+(7 preterm, 1 term). Panels **A/C** (confocal images) are microscopy assets and are not generated here.
+
+* **B** — VGLUT1+ area / total ML area (`Total_Cluster_Area / Cell_Area_um2`, subject-mean of 5 images).
+* **D** — VGLUT2+ area / total ML area (`vglut2_pos_area_um2 / area_um2`, whole-ML row, subject-mean).
+
+# Panel B -- VGLUT1+ area / total ML area
+
+```{r panelB, fig.width=3.6, fig.height=3.4}
+b <- read_excel(find_data("Data_S5_InSitu_Validation.xlsx"), sheet = "VGLUT1_Image_Level") %>%
+ mutate(Subject_ID = as.character(Subject_ID),
+ pos_area_frac = Total_Cluster_Area / Cell_Area_um2) %>%
+ group_by(Subject_ID, GA_weeks) %>%
+ summarise(pos_area_frac = mean(pos_area_frac), .groups = "drop") %>%
+ rename(GA = GA_weeks)
+ctB <- cor.test(b$GA, b$pos_area_frac)
+
+pB <- ggplot(b, aes(GA, pos_area_frac)) +
+ geom_smooth(method = "lm", se = TRUE, colour = "black", fill = "grey70", alpha = 0.3, linewidth = 0.7) +
+ geom_point(colour = VGLUT1_COL, size = 3) +
+ annotate("text", parse = TRUE, x = -Inf, y = Inf, hjust = -0.15, vjust = 1.6,
+ label = rlab(ctB$estimate), size = 3.4, colour = "grey20") +
+ labs(x = "Gestational age at birth (weeks)", y = "vGLUT1+ area / total ML area") +
+ theme_classic(base_size = 10) +
+ theme(axis.title = element_text(size = 9), axis.text = element_text(size = 8))
+print(pB)
+ggsave("Figure_S11B_VGLUT1_areafrac.pdf", pB, width = 3.6, height = 3.4, device = cairo_pdf, bg = "white")
+cat(sprintf("VGLUT1: n=%d r=%.3f P=%.3f\n", nrow(b), ctB$estimate, ctB$p.value))
+```
+
+# Panel D -- VGLUT2+ area / total ML area
+
+```{r panelD, fig.width=3.6, fig.height=3.4}
+img <- read_excel(find_data("Data_S5_InSitu_Validation.xlsx"), sheet = "VGLUT2_Image_Level") %>%
+ mutate(Study_ID = as.character(Subject_ID)) %>%
+ filter(region == "ML") %>%
+ mutate(pos_area_frac = vglut2_pos_area_um2 / area_um2)
+
+cohort <- read_excel(find_data("Data_S2_Postmortem_Histology.xlsx"), sheet = "Postmortem_Cohort") %>%
+ transmute(Study_ID = as.character(Paper_ID),
+ Group = factor(Group, levels = c("Preterm", "Term")), GA = as.numeric(GA_wk))
+
+d <- img %>% left_join(cohort, by = "Study_ID") %>%
+ filter(Group == "Preterm" | Study_ID == "Term 2") %>%
+ mutate(failed = mean_punctum_um2 > 100 | pct_positive_area > 90 | n_puncta < 10) %>%
+ filter(!failed) %>%
+ group_by(Study_ID, GA) %>%
+ summarise(pos_area_frac = mean(pos_area_frac), .groups = "drop")
+ctD <- cor.test(d$GA, d$pos_area_frac)
+
+pD <- ggplot(d, aes(GA, pos_area_frac)) +
+ geom_smooth(method = "lm", se = TRUE, colour = "black", fill = "grey70", alpha = 0.3, linewidth = 0.7) +
+ geom_point(colour = VGLUT2_COL, size = 3) +
+ annotate("text", parse = TRUE, x = -Inf, y = Inf, hjust = -0.15, vjust = 1.6,
+ label = rlab(ctD$estimate), size = 3.4, colour = "grey20") +
+ labs(x = "Gestational age at birth (weeks)", y = "vGLUT2+ area / total ML area") +
+ theme_classic(base_size = 10) +
+ theme(axis.title = element_text(size = 9), axis.text = element_text(size = 8))
+print(pD)
+ggsave("Figure_S11D_VGLUT2_areafrac.pdf", pD, width = 3.6, height = 3.4, device = cairo_pdf, bg = "white")
+cat(sprintf("VGLUT2: n=%d r=%.3f P=%.3f\n", nrow(d), ctD$estimate, ctD$p.value))
+```
+
+# Statistics
+
+```{r stats, echo=FALSE}
+library(knitr); library(kableExtra)
+tibble(
+ Panel = c("B VGLUT1", "D VGLUT2"),
+ n = c(nrow(b), nrow(d)),
+ `Pearson r` = sprintf("%.3f", c(ctB$estimate, ctD$estimate)),
+ `95% CI` = c(sprintf("[%.3f, %.3f]", ctB$conf.int[1], ctB$conf.int[2]),
+ sprintf("[%.3f, %.3f]", ctD$conf.int[1], ctD$conf.int[2])),
+ P = sprintf("%.3f", c(ctB$p.value, ctD$p.value))
+) %>% kable(caption = "VGLUT+ area / total ML area vs GA (subject-level, n = 8)") %>%
+ kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
+```
+
+# Provenance & data
+
+* **B** source: VGLUT1 image-level quantification; data `Data_S5_InSitu_Validation.xlsx` sheet `VGLUT1_Image_Level`.
+* **D** source: VGLUT2 per-image quantification; data = `Data_S5_InSitu_Validation.xlsx` sheet `VGLUT2_Image_Level` (per-image whole-ML rows) linked to the postmortem cohort key (`Data_S2_Postmortem_Histology.xlsx`, sheet `Postmortem_Cohort`); whole-ML QC + single-term (Term 2) selection.
+* **Deck restyle:** r-only annotation (no title/P); VGLUT2 recoloured to **magenta #AA3377** (source used blue #4477AA) to match the deck's VGLUT2 channel; VGLUT1 red #EE6677.
+
+# Session Info
+
+```{r session}
+sessionInfo()
+```

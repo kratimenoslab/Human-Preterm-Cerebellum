@@ -26,9 +26,9 @@ find_data_dir <- function(max_up = 6) {
   stop("Supplementary_Datasets/ not found above ", normalizePath("."))
 }
 DATA <- find_data_dir()
-LAY  <- file.path(DATA, "Dataset_Cerebellar_Layers.xlsx")               # EGL/IGL/ML area + Purkinje density
-MAP  <- file.path(DATA, "Dataset_Cohort_Membership.xlsx")                 # de-identified Paper_ID <-> Sex
-DEN  <- file.path(DATA, "Dataset_EGL_Density.xlsx") # EGL cell density (de-identified)
+LAY  <- file.path(DATA, "Data_S2_Postmortem_Histology.xlsx")               # EGL/IGL/ML area + Purkinje density
+MAP  <- file.path(DATA, "Data_S2_Postmortem_Histology.xlsx")                 # de-identified Paper_ID <-> Sex
+DEN  <- file.path(DATA, "Data_S2_Postmortem_Histology.xlsx") # EGL cell density (de-identified)
 
 sexf <- function(x) factor(dplyr::case_match(toupper(trimws(as.character(x))), "M" ~ "Male", "F" ~ "Female",
                                          .default = NA_character_), levels = c("Female","Male"))
@@ -74,7 +74,7 @@ nm <- c(EGL_normalized = "EGL area", IGL_normalized = "IGL area",
 DS <- list()
 for (c1 in names(nm))
   DS[[nm[[c1]]]] <- lay %>% filter(!is.na(.data[[c1]])) %>% transmute(Subject_ID, GA, Sex, Group, y = .data[[c1]])
-DS[["EGL density"]] <- ld("EGL", "Num EGL") %>% inner_join(axes, by = "Subject_ID") %>%
+DS[["EGL density"]] <- ld("EGL_Density_EGL", "Num EGL") %>% inner_join(axes, by = "Subject_ID") %>%
   filter(!is.na(Sex)) %>% transmute(Subject_ID, GA, Sex, Group, y = density)
 
 # for each measure: GA effect without/with sex, sex P, and the two interaction P values

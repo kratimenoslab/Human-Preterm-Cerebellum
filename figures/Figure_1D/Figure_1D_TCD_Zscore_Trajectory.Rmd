@@ -65,8 +65,7 @@ days_per_month <- 30.44
 grp_order <- c("EP", "VP", "LP")
 group_cols <- c(EP = "#030403", VP = "#DE1567", LP = "#7BACDC") # ' EP/VP/LP palette
 
-data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx",
- "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
 
 exp <- read_excel(data_file, sheet = "Ultrasound") %>%
  # TCD (transcerebellar diameter, mm) = coronal transverse cerebellar measurement

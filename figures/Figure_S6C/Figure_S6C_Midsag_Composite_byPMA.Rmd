@@ -1,0 +1,216 @@
+---
+title: "Figure S6C: Midsagittal Cerebellar Composite (Z-score) by GA Group at 28/33/35 wk PMA"
+subtitle: "Cross-sectional ultrasound composite; pairwise Wilcoxon (was old Figure S4C)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 3.42, fig.height = 5.46, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Supplement panel **Figure S6C** — the **midsagittal** counterpart of main **Figure 1E** (coronal), styled
+identically. Midsagittal cerebellar composite (inverse-correlation weighted z-score of midsagittal AP, height,
+area) across GA groups (EP / VP / LP) at 28, 33, 35 wk ± 2 PMA. One scan per patient (closest to target).
+Pairwise two-sided **Wilcoxon rank-sum**. Was previously **Figure S4C**. Per the original S4 pipeline, the
+midsagittal composite is computed on the coronal-valid subset.
+
+```{r libs}
+library(readxl); library(dplyr); library(ggplot2); library(grid)
+library(knitr); library(kableExtra)
+
+iqr_outlier <- function(x, k = 3) {
+ q1 <- quantile(x, .25, na.rm = TRUE); q3 <- quantile(x, .75, na.rm = TRUE); iqr <- q3 - q1
+ x < (q1 - k*iqr) | x > (q3 + k*iqr)
+}
+inv_corr_composite <- function(df, cols) {
+ m <- cor(df %>% select(all_of(cols)) %>% filter(complete.cases(.)), use = "pairwise.complete.obs")
+ w <- 1 - sapply(seq_along(cols), function(i) mean(abs(m[i, -i]))); w <- w / sum(w)
+ Reduce(`+`, Map(function(cn, wt) wt * as.numeric(scale(df[[cn]])), cols, w))
+}
+```
+
+# Data + midsagittal composite (reproduces old S4 pipeline)
+
+```{r load-composite}
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
+
+us_data <- read_excel(data_file, sheet = "Ultrasound") %>%
+ mutate(
+ GA_Category = factor(case_when(
+ GA_weeks < 28 ~ "Extremely Preterm",
+ GA_weeks < 32 ~ "Very Preterm",
+ TRUE ~ "Late Preterm"),
+ levels = c("Extremely Preterm", "Very Preterm", "Late Preterm")),
+ Study_ID = as.character(Study_ID),
+ across(c(Coronal_Height, Coronal_Transverse, Coronal_Area,
+ Midsag_AP, Midsag_Height, Midsag_Area), as.numeric)
+ ) %>%
+ filter(!is.na(PMA_weeks) & PMA_weeks >= 23 & PMA_weeks <= 45)
+
+# CORONAL first (defines the analysis subset, matching original S4 pipeline)
+us_data <- us_data %>%
+ mutate(Coronal_Height = ifelse(iqr_outlier(Coronal_Height), NA, Coronal_Height),
+ Coronal_Transverse = ifelse(iqr_outlier(Coronal_Transverse), NA, Coronal_Transverse),
+ Coronal_Area = ifelse(iqr_outlier(Coronal_Area), NA, Coronal_Area))
+us_data$US_Coronal_Composite <- inv_corr_composite(
+ us_data, c("Coronal_Height","Coronal_Transverse","Coronal_Area"))
+us_data <- us_data %>% filter(!is.na(US_Coronal_Composite))
+
+# MIDSAGITTAL on the coronal-valid subset
+us_data <- us_data %>%
+ mutate(Midsag_AP = ifelse(iqr_outlier(Midsag_AP), NA, Midsag_AP),
+ Midsag_Height = ifelse(iqr_outlier(Midsag_Height), NA, Midsag_Height),
+ Midsag_Area = ifelse(iqr_outlier(Midsag_Area), NA, Midsag_Area))
+us_data$US_Midsag_Composite <- inv_corr_composite(
+ us_data, c("Midsag_AP","Midsag_Height","Midsag_Area"))
+us_data <- us_data %>% filter(!is.na(US_Midsag_Composite))
+```
+
+# Figure S6C
+
+```{r figure-s3d, fig.width=3.42, fig.height=5.46}
+ga_short <- c("Extremely Preterm" = "EP", "Very Preterm" = "VP", "Late Preterm" = "LP")
+point_cols <- c(EP = "#030403", VP = "#DE1567", LP = "#7BACDC") # ' updated palette
+
+fmt_p_expr <- function(p) {
+ if (is.na(p)) return("NA")
+ if (p < 0.001) return("italic(P) < 0.001")
+ paste0("italic(P) == '", sprintf("%.3f", p), "'")
+}
+
+# one scan/patient nearest a target PMA (± window); keep groups with n >= 2
+get_tp <- function(data, target, window = 2) {
+ data %>%
+ filter(PMA_weeks >= target - window, PMA_weeks <= target + window) %>%
+ group_by(Study_ID) %>% slice_min(abs(PMA_weeks - target), n = 1, with_ties = FALSE) %>%
+ ungroup() %>%
+ mutate(GA_Label = factor(ga_short[as.character(GA_Category)], levels = c("EP","VP","LP"))) %>%
+    group_by(GA_Label) %>% filter(n() >= 2) %>% ungroup()
+}
+
+# --- Built like Figure 1E: single continuous box + dashed separators + top headers ---
+grp_order <- c("EP", "VP", "LP")
+grp_step <- 0.8
+grp_gap <- 1.1
+tp_labels <- c(`28` = "28 weeks\nPMA", `33` = "33 weeks\nPMA", `35` = "35 weeks\nPMA")
+
+plot_df <- list(); bracket_df <- list(); header_df <- list(); sep_x <- c()
+cursor <- 1; first <- TRUE
+for (tp in names(tp_labels)) {
+ d <- get_tp(us_data, as.numeric(tp))
+ present <- intersect(grp_order, as.character(unique(droplevels(d$GA_Label))))
+ xs <- cursor + (seq_along(present) - 1) * grp_step
+ names(xs) <- present
+ if (!first) sep_x <- c(sep_x, cursor - grp_gap / 2)
+ d$xc <- xs[as.character(d$GA_Label)]
+ plot_df[[tp]] <- d %>% transmute(GA_Label, y = US_Midsag_Composite, xc)
+ header_df[[tp]] <- data.frame(xl = min(xs) - 0.45, xr = max(xs) + 0.45,
+ xc = mean(range(xs)), text = tp_labels[tp])
+ combos <- combn(present, 2, simplify = FALSE)
+ combos <- combos[order(sapply(combos, function(cc) abs(xs[cc[2]] - xs[cc[1]])))]
+ ymax <- max(d$US_Midsag_Composite, na.rm = TRUE); base <- ymax + 0.30; step <- 0.42
+ for (i in seq_along(combos)) {
+ cc <- combos[[i]]
+ p <- wilcox.test(d$US_Midsag_Composite[d$GA_Label == cc[1]],
+ d$US_Midsag_Composite[d$GA_Label == cc[2]])$p.value
+ bracket_df[[paste(tp,i)]] <- data.frame(
+ x = xs[cc[1]], xend = xs[cc[2]], y = base + step*(i-1),
+ lx = mean(c(xs[cc[1]], xs[cc[2]])), label = fmt_p_expr(p))
+ }
+ cursor <- max(xs) + grp_gap; first <- FALSE
+}
+plot_df <- bind_rows(plot_df)
+bracket_df <- bind_rows(bracket_df)
+header_df <- bind_rows(header_df)
+x_breaks <- plot_df %>% distinct(GA_Label, xc) %>% arrange(xc)
+
+tick <- 0.10
+top_bracket <- max(bracket_df$y) + 0.22
+y_lo <- min(plot_df$y, na.rm = TRUE) - 0.20
+x_left <- min(plot_df$xc) - 0.6
+x_right <- max(plot_df$xc) + 0.5
+box_top <- top_bracket + 0.05 # full box encloses data + brackets; headers sit above it
+hdr_line_y <- box_top + 0.22 # underline: small gap above the box top
+hdr_text_y <- hdr_line_y + 0.24 # header text above its underline
+
+fig_s3d <- ggplot(plot_df, aes(x = xc, y = y)) +
+ # dashed separators between timepoints (span the full box height)
+ geom_segment(data = data.frame(x = sep_x),
+ aes(x = x, xend = x, y = y_lo, yend = box_top),
+ inherit.aes = FALSE, linetype = "dashed", colour = "grey70", linewidth = 0.3) +
+ geom_boxplot(aes(group = xc), width = 0.5, fill = "white",
+ colour = "gray30", linewidth = 0.45, outlier.shape = NA) +
+ geom_jitter(aes(colour = GA_Label), width = 0.11, alpha = 1, size = 1.1) +
+ # significance brackets
+ geom_segment(data = bracket_df, aes(x = x, xend = xend, y = y, yend = y),
+ inherit.aes = FALSE, linewidth = 0.35, colour = "gray20") +
+ geom_segment(data = bracket_df, aes(x = x, xend = x, y = y - tick, yend = y),
+ inherit.aes = FALSE, linewidth = 0.35, colour = "gray20") +
+ geom_segment(data = bracket_df, aes(x = xend, xend = xend, y = y - tick, yend = y),
+ inherit.aes = FALSE, linewidth = 0.35, colour = "gray20") +
+ geom_text(data = bracket_df, aes(x = lx, y = y + tick*1.6, label = label),
+ inherit.aes = FALSE, parse = TRUE, size = 3.0, colour = "gray20") +
+ # timepoint headers (underlined) above the box
+ geom_segment(data = header_df, aes(x = xl, xend = xr, y = hdr_line_y, yend = hdr_line_y),
+ inherit.aes = FALSE, linewidth = 0.5, colour = "black") +
+ geom_text(data = header_df, aes(x = xc, y = hdr_text_y, label = text),
+ inherit.aes = FALSE, size = 3.1, colour = "black", lineheight = 0.9, vjust = 0) +
+ scale_colour_manual(values = point_cols, guide = "none") +
+ scale_x_continuous(breaks = x_breaks$xc, labels = x_breaks$GA_Label,
+ limits = c(x_left, x_right), expand = c(0, 0)) +
+ scale_y_continuous(breaks = c(-2, 0, 2)) +
+ coord_cartesian(ylim = c(y_lo, box_top), expand = FALSE, clip = "off") +
+ labs(x = NULL, y = "Midsagittal Composite (Z-score)") +
+ theme_classic(base_size = 10) +
+ theme(
+ axis.text.x = element_text(size = 10),
+ axis.text.y = element_text(size = 10),
+ axis.title.y = element_text(size = 10),
+ axis.line = element_blank(),
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+ panel.grid = element_blank(),
+ plot.margin = margin(t = 58, r = 6, b = 3, l = 3)
+ )
+
+fig_s3d
+ggsave("Figure_S6C_Midsag_Composite_byPMA.pdf", fig_s3d, width = 3.42, height = 5.46, dpi = 300)
+message("Saved: Figure_S6C_Midsag_Composite_byPMA.{pdf,png}")
+```
+
+# Per-group n and pairwise P
+
+```{r summary-table}
+plot_df %>% mutate(tp = case_when(xc <= 2.5 ~ "28 wk", xc <= 5 ~ "33 wk", TRUE ~ "35 wk")) %>%
+ group_by(tp, GA_Label) %>% summarise(n = n(), median_z = round(median(y),2), .groups = "drop") %>%
+ kable(caption = "Per-group n and median midsagittal composite") %>%
+ kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

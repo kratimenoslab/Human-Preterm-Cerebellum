@@ -1,0 +1,191 @@
+---
+title: "Figure S6D: Midsagittal Cerebellar Growth Rate by GA Group"
+subtitle: "LME random-slope growth velocity (was old Figure S4D)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 2.1, fig.height = 4.6, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Supplement panel **Figure S6D** — the **midsagittal** counterpart of main **Figure 1F** (coronal), styled
+identically. Midsagittal cerebellar **growth rate** (midsagittal composite z-score change per week) by GA group,
+from an LME random-slope model; group slopes + 95% CI via `emtrends`, pairwise via `emmeans::pairs`.
+Was previously **Figure S4D**. Midsagittal composite computed on the coronal-valid subset (original S4 pipeline).
+
+```{r libs}
+library(readxl); library(dplyr); library(ggplot2)
+library(lme4); library(lmerTest); library(emmeans)
+library(knitr); library(kableExtra)
+
+iqr_outlier <- function(x, k = 3) {
+ q1 <- quantile(x, .25, na.rm = TRUE); q3 <- quantile(x, .75, na.rm = TRUE); iqr <- q3 - q1
+ x < (q1 - k*iqr) | x > (q3 + k*iqr)
+}
+inv_corr_composite <- function(df, cols) {
+ m <- cor(df %>% select(all_of(cols)) %>% filter(complete.cases(.)), use = "pairwise.complete.obs")
+ w <- 1 - sapply(seq_along(cols), function(i) mean(abs(m[i, -i]))); w <- w / sum(w)
+ Reduce(`+`, Map(function(cn, wt) wt * as.numeric(scale(df[[cn]])), cols, w))
+}
+```
+
+# Data + midsagittal composite (reproduces old S4 pipeline)
+
+```{r load-composite}
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
+
+us_data <- read_excel(data_file, sheet = "Ultrasound") %>%
+ mutate(
+ GA_Category = factor(case_when(
+ GA_weeks < 28 ~ "Extremely Preterm",
+ GA_weeks < 32 ~ "Very Preterm",
+ TRUE ~ "Late Preterm"),
+ levels = c("Extremely Preterm", "Very Preterm", "Late Preterm")),
+ Study_ID = as.character(Study_ID),
+ across(c(Coronal_Height, Coronal_Transverse, Coronal_Area,
+ Midsag_AP, Midsag_Height, Midsag_Area), as.numeric)
+ ) %>%
+ filter(!is.na(PMA_weeks) & PMA_weeks >= 23 & PMA_weeks <= 45)
+
+# CORONAL first (defines the analysis subset, matching original S4)
+us_data <- us_data %>%
+ mutate(Coronal_Height = ifelse(iqr_outlier(Coronal_Height), NA, Coronal_Height),
+ Coronal_Transverse = ifelse(iqr_outlier(Coronal_Transverse), NA, Coronal_Transverse),
+ Coronal_Area = ifelse(iqr_outlier(Coronal_Area), NA, Coronal_Area))
+us_data$US_Coronal_Composite <- inv_corr_composite(
+ us_data, c("Coronal_Height","Coronal_Transverse","Coronal_Area"))
+us_data <- us_data %>% filter(!is.na(US_Coronal_Composite))
+
+# MIDSAGITTAL on the coronal-valid subset
+us_data <- us_data %>%
+ mutate(Midsag_AP = ifelse(iqr_outlier(Midsag_AP), NA, Midsag_AP),
+ Midsag_Height = ifelse(iqr_outlier(Midsag_Height), NA, Midsag_Height),
+ Midsag_Area = ifelse(iqr_outlier(Midsag_Area), NA, Midsag_Area))
+us_data$US_Midsag_Composite <- inv_corr_composite(
+ us_data, c("Midsag_AP","Midsag_Height","Midsag_Area"))
+us_data <- us_data %>% filter(!is.na(US_Midsag_Composite))
+
+# center PMA
+us_data$PMA_c <- us_data$PMA_weeks - mean(us_data$PMA_weeks, na.rm = TRUE)
+```
+
+# LME growth-rate model
+
+```{r lme}
+us_mid <- us_data %>% filter(!is.na(US_Midsag_Composite))
+model_ok <- FALSE
+try({
+ m_int <- lmer(US_Midsag_Composite ~ PMA_c * GA_Category + (1 + PMA_c | Study_ID),
+ data = us_mid, REML = FALSE,
+ control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e5)))
+ if (!isSingular(m_int)) model_ok <- TRUE
+}, silent = TRUE)
+if (!model_ok) {
+ m_int <- lmer(US_Midsag_Composite ~ PMA_c * GA_Category + (1 | Study_ID),
+ data = us_mid, REML = FALSE, control = lmerControl(optimizer = "bobyqa"))
+}
+slopes <- as.data.frame(emtrends(m_int, ~ GA_Category, var = "PMA_c"))
+names(slopes) <- c("GA_Category", "Slope", "SE", "df", "CI_Lower", "CI_Upper")
+pairs_df <- as.data.frame(pairs(emtrends(m_int, ~ GA_Category, var = "PMA_c")))
+
+slopes %>% mutate(across(c(Slope, SE, CI_Lower, CI_Upper), ~round(.,4))) %>%
+ kable(caption = "Midsagittal growth rate (z/wk) by group") %>%
+ kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+pairs_df %>% mutate(p.value = round(p.value, 3)) %>%
+ kable(caption = "Pairwise slope comparisons") %>%
+ kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE)
+```
+
+# Figure S6D
+
+```{r figure-s3e, fig.width=2.1, fig.height=4.6}
+ga_short <- c("Extremely Preterm" = "EP", "Very Preterm" = "VP", "Late Preterm" = "LP")
+bar_fill <- c(EP = "#030403", VP = "#DE1567", LP = "#7BACDC") # ' updated palette (solid bars)
+
+fmt_p_expr <- function(p) {
+ if (is.na(p)) return("NA")
+ if (p < 0.001) return("italic(P) < 0.001")
+ paste0("italic(P) == '", sprintf("%.2f", p), "'")
+}
+
+sl <- slopes %>%
+ mutate(GA_Label = factor(ga_short[as.character(GA_Category)], levels = c("EP","VP","LP")),
+ x = as.integer(GA_Label))
+
+# pairs() row order: EP-VP, EP-LP, VP-LP
+pv <- setNames(pairs_df$p.value, c("EP-VP","EP-LP","VP-LP"))
+
+max_y <- max(sl$CI_Upper); min_y <- min(c(0, sl$CI_Lower)); rng <- max_y - min_y
+gap <- rng*0.12; step <- rng*0.13; tick <- rng*0.035; base <- max_y + gap
+bottom_y <- min_y - rng*0.02
+y_axis_top <- base + step*2 + tick*1.5 # y-axis line stops just above the top bracket
+x_left <- 0.5
+bracket_df <- data.frame(
+ xmin = c(1, 2, 1), xmax = c(2, 3, 3),
+ y = c(base, base + step, base + step*2),
+ lx = c(1.5, 2.5, 2.0),
+ label = c(fmt_p_expr(pv["EP-VP"]), fmt_p_expr(pv["VP-LP"]), fmt_p_expr(pv["EP-LP"]))
+)
+
+fig_s3e <- ggplot(sl, aes(x = x, y = Slope)) +
+ geom_col(aes(fill = GA_Label), width = 0.68, colour = NA) +
+ geom_errorbar(aes(ymin = CI_Lower, ymax = CI_Upper), width = 0.14, linewidth = 0.5, colour = "black") +
+ geom_hline(yintercept = 0, linetype = "dashed", colour = "gray55", linewidth = 0.4) +
+ # brackets
+ geom_segment(data = bracket_df, aes(x = xmin, xend = xmax, y = y, yend = y),
+ inherit.aes = FALSE, linewidth = 0.35, colour = "gray20") +
+ geom_segment(data = bracket_df, aes(x = xmin, xend = xmin, y = y - tick, yend = y),
+ inherit.aes = FALSE, linewidth = 0.35, colour = "gray20") +
+ geom_segment(data = bracket_df, aes(x = xmax, xend = xmax, y = y - tick, yend = y),
+ inherit.aes = FALSE, linewidth = 0.35, colour = "gray20") +
+ geom_text(data = bracket_df, aes(x = lx, y = y + tick*1.4, label = label),
+ inherit.aes = FALSE, parse = TRUE, size = 3.0, colour = "gray20") +
+ scale_fill_manual(values = bar_fill, guide = "none") +
+ scale_x_continuous(breaks = 1:3, labels = c("EP","VP","LP"), limits = c(0.5, 3.5)) +
+ scale_y_continuous(breaks = c(0.0, 0.1, 0.2, 0.3)) +
+ coord_cartesian(ylim = c(bottom_y, base + step*2 + rng*0.16), expand = FALSE, clip = "off") +
+ labs(x = NULL, y = "Midsagittal cerebellar growth rate\n(Z-score / week)") +
+ theme_classic(base_size = 10) +
+ theme(
+ axis.text.x = element_text(size = 10),
+ axis.text.y = element_text(size = 10),
+ axis.title.y = element_text(size = 10),
+ axis.line = element_blank(),
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.ticks = element_line(linewidth = 0.3, colour = "black"),
+ panel.grid = element_blank(),
+ plot.margin = margin(t = 6, r = 6, b = 3, l = 3)
+ )
+
+fig_s3e
+ggsave("Figure_S6D_Midsag_GrowthRate.pdf", fig_s3e, width = 2.1, height = 4.6, dpi = 300)
+message("Saved: Figure_S6D_Midsag_GrowthRate.{pdf,png}")
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

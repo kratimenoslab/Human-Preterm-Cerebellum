@@ -1,0 +1,236 @@
+---
+title: "Figure S10 -- GSEA GO Enrichment Heatmap"
+subtitle: "Spatial Transcriptomics Pattern-Level Gene Set Enrichment (fgsea, GO Terms)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE,
+ message = FALSE,
+ warning = FALSE,
+ fig.width = 8,
+ fig.height = 15,
+ dpi = 300
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Location-agnostic dataset finder (RELATIVE paths only) ---
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+**Figure S10** shows a heatmap of Gene Ontology (GO) enrichment results from **fgsea**
+(fast gene set enrichment analysis) applied to CoGAPS spatial transcriptomics patterns
+from Visium data. Three cerebellar patterns are compared:
+
+| Pattern | Label | Cell Layer |
+|---------|-------|-----------|
+| Pattern_16 | CMAP_IGL_IMM | Internal Granular Layer (Immature) |
+| Pattern_17 | CMAP_IGL | Internal Granular Layer |
+| Pattern_27 | CMAP_PCL | Purkinje Cell Layer |
+
+The heatmap displays `log10(-log10(p-value))` for the union of top 50 GO terms per pattern,
+with pathways as rows and patterns as columns (vertical layout matching original).
+
+# Libraries
+
+```{r libraries}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(ComplexHeatmap)
+library(circlize)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Source Data & Methods
+
+## Data Provenance
+
+1. **Source**: 10x Visium spatial transcriptomics of postmortem human cerebellar tissue
+2. **Pattern decomposition**: CoGAPS (n=30 patterns)
+3. **Gene set enrichment**: fgsea with GO gene sets, using gene weights from each pattern
+4. **Input file**: `Supplementary_Datasets/Data_S3_SpatialTx_Tables.xlsx` (3 sheets: Pattern_16, Pattern_17, Pattern_27)
+
+Each sheet contains 10,395 GO pathways with columns: `pathway`, `pval`, `padj`, `NES`, `ES`, `size`.
+
+## Data Loading
+
+```{r load-data}
+sheets <- c("Pattern_16", "Pattern_17", "Pattern_27")
+pattern_labels <- c("Pattern_16" = "CMAP_IGL_IMM",
+ "Pattern_17" = "CMAP_IGL",
+ "Pattern_27" = "CMAP_PCL")
+
+gsea_file <- find_dataset("Data_S3_SpatialTx_Tables.xlsx")
+
+df <- lapply(sheets, function(s) {
+ read_excel(gsea_file, sheet = s) %>%
+ select(pathway, pval) %>%
+ mutate(Sheet = s)
+}) %>%
+  bind_rows()
+```
+
+---
+
+# Step 1 -- Select Top Pathways
+
+Union of top 50 GO terms per pattern (ranked by p-value), deduplicated.
+
+```{r select-top}
+top_pathways <- df %>%
+ group_by(Sheet) %>%
+ arrange(pval) %>%
+ slice_head(n = 50) %>%
+ ungroup() %>%
+ pull(pathway) %>%
+  unique()
+```
+
+```{r top-count}
+tibble(
+ Step = c("Top 50 per pattern (3 patterns)", "Union (deduplicated)"),
+ N = c(150, length(top_pathways))
+) %>%
+ kable(caption = "Pathway selection") %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+---
+
+# Step 2 -- Filter to Top Pathways
+
+Filter the full data to include only the union of top-50 pathways per pattern.
+Row ordering for the heatmap uses `top_pathways` (preserving first-occurrence order
+from grouped `slice_head` + `unique`, matching the original `top_df` variable).
+
+```{r filter-top}
+plot_df <- df %>% filter(pathway %in% top_pathways)
+```
+
+---
+
+# Step 3 -- Build Heatmap Matrix
+
+Convert to matrix of `-log10(p-value)`, then apply `log10` transformation
+(i.e., `log10(-log10(p))`) matching the original figure scale.
+
+```{r build-matrix}
+matrix_df <- plot_df %>%
+ mutate(neg_log10_p = -log10(pval)) %>%
+ select(pathway, Sheet, neg_log10_p) %>%
+ pivot_wider(names_from = Sheet, values_from = neg_log10_p) %>%
+ column_to_rownames("pathway") %>%
+  as.matrix()
+
+# Apply log10 transform (matching original code)
+matrix_df <- log10(matrix_df)
+
+# Reorder rows using top_pathways (matching the top_df ordering)
+matrix_df <- matrix_df[top_pathways, ]
+
+# Rename columns to biological labels
+colnames(matrix_df) <- pattern_labels[colnames(matrix_df)]
+```
+
+## Source Data Summary
+
+```{r source-summary}
+tibble(
+ Pattern = pattern_labels,
+ Sheet = names(pattern_labels),
+ Top_Pathway = sapply(names(pattern_labels), function(s) {
+ df %>% filter(Sheet == s) %>% arrange(pval) %>% slice(1) %>% pull(pathway)
+ }),
+ Min_pval = sapply(names(pattern_labels), function(s) {
+ df %>% filter(Sheet == s) %>% arrange(pval) %>% slice(1) %>% pull(pval) %>%
+ sprintf("%.2e", .)
+ })
+) %>%
+ kable(caption = "Most significant GO term per pattern") %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+---
+
+# Figure S10 -- GSEA GO Enrichment Heatmap
+
+Same heatmap as the original code, **rotated 90°** to fit the wide layout: the matrix is transposed so the
+three patterns are rows (CMAP_PCL / CMAP_IGL / CMAP_IGL_IMM) and the GO terms are columns — columns stay in
+the original `top_pathways` order (no reordering). Everything else (colours, legend) is the original format.
+
+```{r fig-S9, fig.width=18, fig.height=13}
+mat_t <- t(matrix_df)[c("CMAP_PCL", "CMAP_IGL", "CMAP_IGL_IMM"), ] # rotate; deck row order, columns unchanged
+
+ht <- Heatmap(
+ mat_t,
+ cluster_rows = FALSE,
+ cluster_columns = FALSE,
+ row_names_side = "left",
+ row_names_gp = gpar(fontsize = 14), # bigger pattern labels
+ column_names_gp = gpar(fontsize = 9), # bigger GO-term labels
+ width = ncol(mat_t) * unit(3.6, "mm"), # narrower cells
+ height = nrow(mat_t) * unit(14, "mm"), # taller cells
+ name = "-Log10(P)",
+ show_heatmap_legend = FALSE # legend placed manually (bottom-left)
+)
+
+# draw the heatmap with extra bottom padding, then place the colour bar low at bottom-left
+draw_S9 <- function() {
+ draw(ht, padding = unit(c(80, 2, 2, 2), "mm")) # reserve space below the labels
+ lgd <- Legend(col_fun = ht@matrix_color_mapping@col_fun, title = "-Log10(P)",
+ direction = "horizontal", at = c(-0.5, 0, 0.5, 1, 1.5),
+ legend_width = unit(4.5, "cm"), title_position = "lefttop")
+ draw(lgd, x = unit(3.5, "cm"), y = unit(6.0, "cm"), just = c("left", "bottom"))
+}
+draw_S9()
+```
+
+```{r pdf-S9, include=FALSE}
+pdf("Figure_S10_GSEA_Heatmap.pdf", height = 13, width = 18); draw_S9(); dev.off()
+```
+
+---
+
+# Pathway List
+
+```{r pathway-table}
+plot_df %>%
+ mutate(Sheet = pattern_labels[Sheet]) %>%
+ select(Pathway = pathway, Pattern = Sheet, pval) %>%
+ pivot_wider(names_from = Pattern, values_from = pval) %>%
+ mutate(across(where(is.numeric), ~sprintf("%.2e", .))) %>%
+ kable(caption = "P-values for all pathways in the heatmap") %>%
+ kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+ scroll_box(height = "500px")
+```
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

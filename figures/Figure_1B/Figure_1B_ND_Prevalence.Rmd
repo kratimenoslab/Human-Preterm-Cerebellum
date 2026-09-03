@@ -94,7 +94,7 @@ kable(excl_flow,
 | VP | Very Preterm | 28 to < 32 weeks |
 | LP | Late Preterm | >= 32 weeks |
 
-**Data Source:** `Supplementary_Datasets/Dataset_Clinical_MRI_US_ND.xlsx`, sheet = "Neurodevelopmental". The sheet contains all 178 subjects (post scan-timing exclusions); excluded subjects are marked via the `Included` and `Exclusion_Reason` columns. The code below filters to `Included == "Yes"` to obtain the analytic sample.
+**Data Source:** `Supplementary_Datasets/Data_S1_InVivo_Cohort.xlsx`, sheet = "Neurodevelopmental". The sheet contains all 178 subjects (post scan-timing exclusions); excluded subjects are marked via the `Included` and `Exclusion_Reason` columns. The code below filters to `Included == "Yes"` to obtain the analytic sample.
 
 ## Load Data
 
@@ -104,7 +104,7 @@ kable(excl_flow,
 # Sheet contains all 178 subjects; filter to Included == "Yes"
 # for the with-LP ND cohort (N = 169); Fig 1B uses the EP+VP subset (N = 145)
 # ============================================================
-data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
 nd_all <- read_excel(data_file, sheet = "Neurodevelopmental")
 
 # Show what was excluded

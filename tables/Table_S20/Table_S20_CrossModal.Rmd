@@ -23,13 +23,13 @@ find_data_dir <- function(sub = ".", max_up = 6) {
   stop("Supplementary_Datasets/", sub, " not found above ", normalizePath("."))
 }
 COG  <- find_data_dir()
-NORM <- file.path(COG, "Dataset_CrossModal_Normalized_Areas.xlsx")
+NORM <- file.path(COG, "Data_S3_SpatialTx_Tables.xlsx")
 mn   <- function(s) gsub("-", "−", s)   # typographic minus
 
 # Subjects with BOTH modalities (transcriptomic + neuropathology)
-OVERLAP <- c("934", "1061", "1154", "1210", "4434")
+OVERLAP <- c("Preterm 1", "Term 1", "Preterm 2", "Term 3", "Preterm 52")
 GRP <- data.frame(Subject = OVERLAP,
-                  Paper_ID = c("Preterm 1", "Term 1", "Preterm 2", "Term 3", "Preterm 52"),
+                  Paper_ID = OVERLAP,
                   Group    = c("Preterm", "Term", "Preterm", "Term", "Preterm"))
 ```
 
@@ -53,12 +53,13 @@ estimate's stability, and a two-sided exact-permutation *P* (all 120 permutation
 
 ```{r cogaps}
 # spot x pattern matrix
-P <- fread(file.path(COG, "Dataset_CrossModal_CoGAPS_Patterns.csv")); setnames(P, 1, "pattern")
+P <- fread(file.path(COG, "Data_S4_CoGAPS_Pattern_Weights.csv")); setnames(P, 1, "pattern")
+P <- P[pattern %in% c("Pattern_27", "Pattern_16", "Pattern_17")]   # the three CMAPs
 mat <- t(as.matrix(P[, -1, with = FALSE])); colnames(mat) <- P$pattern
 pat <- data.table(spot = rownames(mat), mat)
 setnames(pat, c("Pattern_27","Pattern_16","Pattern_17"), c("CMAP_PCL","CMAP_IGL_IMM","CMAP_IGL"))
 # spot metadata (subject, layer, cell type)
-m <- fread(file.path(COG, "Dataset_CrossModal_Spot_Metadata.csv"))
+m <- fread(file.path(COG, "Data_S4_Spot_Metadata.csv"))
 setnames(m, c("index","Gestational Age (Weeks)"), c("spot","GA"))
 m <- m[Subject != "NA" & !is.na(Subject) & discard == FALSE]
 d <- merge(pat, m, by = "spot"); d[, Subject := as.character(Subject)]

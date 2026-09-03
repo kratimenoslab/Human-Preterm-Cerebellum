@@ -94,7 +94,7 @@ kable(excl_flow,
 | VP | Very Preterm | 28 to < 32 weeks |
 | LP | Late Preterm | >= 32 weeks |
 
-**Data Source:** `Supplementary_Datasets/Dataset_Clinical_MRI_US_ND.xlsx`, sheet = "MRI". The sheet contains all 123 subjects with automated cerebellar 3D segmentation; 3 subjects are excluded (IDs 57, 104, 469) and marked via the `Included` and `Exclusion_Reason` columns. The code below filters to `Included == "Yes"` to obtain the analytic sample (N = 120).
+**Data Source:** `Supplementary_Datasets/Data_S1_InVivo_Cohort.xlsx`, sheet = "MRI". The sheet contains all 123 subjects with automated cerebellar 3D segmentation; 3 subjects are excluded (IDs 57, 104, 469) and marked via the `Included` and `Exclusion_Reason` columns. The code below filters to `Included == "Yes"` to obtain the analytic sample (N = 120).
 
 ## Load Data
 
@@ -104,7 +104,7 @@ kable(excl_flow,
 # Sheet contains all 123 subjects with segmentation data;
 # filter to Included == "Yes" for the analytic sample (N = 120)
 # ============================================================
-data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
 df_all <- read_excel(data_file, sheet = "MRI")
 
 # Show what was excluded

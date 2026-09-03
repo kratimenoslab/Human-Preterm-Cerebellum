@@ -22,7 +22,7 @@ find_data_dir <- function(sub = ".", max_up = 6) {
   stop("Supplementary_Datasets/", sub, " not found above ", normalizePath("."))
 }
 DIR  <- find_data_dir()
-WB   <- file.path(DIR, "Dataset_CMAP_Subgroup_Correlations.xlsx")   # consolidated: correlations + metrics + subgroups
+WB   <- file.path(DIR, "Data_S3_SpatialTx_Tables.xlsx")   # consolidated: correlations + metrics + subgroups
 mn   <- function(x) gsub("-", "−", sprintf("%.3f", x))   # 3 dp, typographic minus
 ```
 
@@ -38,7 +38,7 @@ estimates become unstable at smaller sample sizes; strata below that threshold a
 
 # Data
 
-All inputs are consolidated in `Dataset_CMAP_Subgroup_Correlations.xlsx` (one sheet each):
+All inputs are consolidated in `Data_S3_SpatialTx_Tables.xlsx` (one sheet each):
 * sheets `ga_correlations`, `pma_correlations` — Spearman ρ per subgroup for each pattern (H-16/17/27),
   from the CoGAPS subgroup analysis (subject-level CMAP activity vs GA / vs PMA).
 * sheet `spatial_cohort_subgroups` — de-identified per-subject subgroup membership, used only to count each

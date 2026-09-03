@@ -1,0 +1,88 @@
+---
+title: "Figure S6A: MRI 3D cerebellar volume vs coronal ultrasound composite"
+subtitle: "Well-matched scans (ultrasound within 2 weeks of MRI); was R4-3 US_vs_MRI3D coronal (≤2 wk)"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document: { toc: true, toc_float: true, theme: flatly, code_folding: hide }
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 3, fig.height = 3.3, dpi = 300)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Overview
+
+Supplement panel **Figure S6A** (= R4-3 cross-modal "Coronal · ≤2 wk of MRI"). MRI 3D segmented cerebellar
+volume vs the coronal ultrasound 2D size composite (inverse-correlation-weighted z-score), restricted to
+ultrasound scans within 2 weeks of the MRI (well-matched). Pearson r. Coloured by GA group (EP/VP/LP).
+
+```{r data}
+library(readxl); library(dplyr); library(ggplot2)
+
+ga_cols <- c(EP = "#030403", VP = "#DE1567", LP = "#7BACDC")
+zc <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
+wcomp <- function(df, cols) {
+ Z <- sapply(cols, function(c) zc(df[[c]]))
+ cm <- cor(Z[complete.cases(Z), , drop = FALSE])
+ w <- 1 - sapply(seq_along(cols), function(i) mean(abs(cm[i, -i]))); w <- w / sum(w)
+ as.numeric(Z %*% w)
+}
+gl <- function(g) factor(toupper(trimws(as.character(g))), levels = names(ga_cols))
+
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
+us <- read_excel(data_file, sheet = "Ultrasound") %>% mutate(Study_ID = as.character(Study_ID))
+mri <- read_excel(data_file, sheet = "MRI") %>% filter(Included == "Yes") %>%
+ mutate(Study_ID = as.character(Study_ID)) %>%
+ select(Study_ID, GA_Group, MRI_PMA_weeks, Cerebellar_Volume_mm3)
+
+# ultrasound scan nearest the MRI per subject; composites on that set; then keep <=2 wk
+us_tea <- us %>% inner_join(mri %>% select(Study_ID, MRI_PMA_weeks), by = "Study_ID") %>%
+ mutate(gap_wk = abs(PMA_weeks - MRI_PMA_weeks)) %>%
+ group_by(Study_ID) %>% slice_min(gap_wk, n = 1, with_ties = FALSE) %>% ungroup()
+us_tea$US_Coronal_Comp <- wcomp(us_tea, c("Coronal_Height", "Coronal_Transverse", "Coronal_Area"))
+us_tea$US_Midsag_Comp <- wcomp(us_tea, c("Midsag_AP", "Midsag_Height", "Midsag_Area"))
+d <- us_tea %>% select(Study_ID, US_Coronal_Comp, US_Midsag_Comp, gap_wk) %>%
+ inner_join(mri, by = "Study_ID") %>% mutate(GA = gl(GA_Group))
+dm <- d %>% filter(gap_wk <= 2) # well-matched (n = 34)
+```
+
+```{r figure-s3b, fig.width=3, fig.height=3.3}
+xv <- "US_Coronal_Comp"; yv <- "Cerebellar_Volume_mm3"
+ok <- complete.cases(dm[[xv]], dm[[yv]]); dd <- dm[ok, ]
+ct <- cor.test(dd[[xv]], dd[[yv]])
+lab <- sprintf("italic(r) == %.2f * ',' ~~ italic(P) %s", ct$estimate,
+ ifelse(ct$p.value < 0.001, "< 0.001", paste0("== ", sprintf('%.3f', ct$p.value))))
+
+p <- ggplot(dd, aes(.data[[xv]], .data[[yv]])) +
+ geom_smooth(method = "lm", se = TRUE, colour = "black", fill = "gray80", aes(group = 1), linewidth = 0.4) +
+ geom_point(aes(colour = GA), alpha = 1, size = 1.8) +
+ annotate("text", x = -Inf, y = Inf, label = lab, parse = TRUE, hjust = -0.08, vjust = 3.0, size = 3) +
+ scale_colour_manual(values = ga_cols, name = NULL) +
+ scale_y_continuous(labels = scales::comma) +
+ labs(x = "Coronal composite (Z-score)", y = expression("Cerebellar volume (mm"^3*")")) +
+ theme_classic(base_size = 10) +
+ theme(legend.position = "bottom", panel.grid = element_blank(),
+ axis.line = element_blank(), panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+ axis.title = element_text(size = 10), axis.text = element_text(size = 10),
+ legend.text = element_text(size = 8), legend.key.size = unit(0.3, "cm"),
+ plot.margin = margin(4, 6, 3, 3))
+p
+ggsave("Figure_S6A_Vol_vs_CoronalComposite.pdf", p, width = 3, height = 3.3, dpi = 300)
+message("n (<=2wk) = ", nrow(dd), "; r = ", round(ct$estimate,2), "; P = ", signif(ct$p.value,3))
+```
+
+```{r session}
+sessionInfo()
+```

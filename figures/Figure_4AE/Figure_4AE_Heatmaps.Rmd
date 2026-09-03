@@ -64,12 +64,12 @@ Z-scored expression values were derived from **10x Visium spatial transcriptomic
 
 **Samples**: 8 postmortem cerebellar specimens spanning GA 26, 27, 30, 34, 38, 38, 39, 40 weeks.
 
-**Input file**: `Supplementary_Datasets/Dataset_RNAScope.xlsx`, sheet `Heatmap_ZScores`.
+**Input file**: `Supplementary_Datasets/Data_S5_InSitu_Validation.xlsx`, sheet `Heatmap_ZScores`.
 
 ## Data Loading
 
 ```{r load-data}
-zscore_df <- read_excel(find_dataset("Dataset_RNAScope.xlsx"), sheet = "Heatmap_ZScores")
+zscore_df <- read_excel(find_dataset("Data_S5_InSitu_Validation.xlsx"), sheet = "Heatmap_ZScores")
 ```
 
 ## Source Data -- Z-Scored Expression (All Top 20 Genes)

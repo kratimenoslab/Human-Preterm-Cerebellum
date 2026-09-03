@@ -1,0 +1,629 @@
+---
+title: "Figure S7: US Cerebellar Composite Trajectories by GA Group"
+subtitle: "Shared-axes scatter plots with linear regression + percent change ANOVA"
+author: ""
+date: "`r format(Sys.time(), '%Y-%m-%d %H:%M:%S')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ echo = TRUE, warning = FALSE, message = FALSE,
+ fig.width = 14, fig.height = 8, dpi = 300
+)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+
+# --- Local dataset finder (RELATIVE paths only) ---------------------------
+find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
+ if (is.character(names) && length(names) == 1) names <- c(names)
+ prefix <- "."
+ for (i in 0:max_up) {
+ for (nm in names) { rel <- file.path(prefix, subdir, nm); if (file.exists(rel)) return(rel) }
+ prefix <- file.path(prefix, "..")
+ }
+ stop("Dataset not found under a 'Supplementary_Datasets/' folder: ", paste(names, collapse = " / "))
+}
+```
+
+# Data Loading and Composite Calculation
+
+All eight subpanels (EP, VP, LP, All × Coronal, Midsagittal) share the same x-axis (PMA weeks) and a common y-axis within each row, so growth trajectories can be compared visually across GA groups without the eye having to rescale. Limits are applied with `coord_cartesian`, so no data points are dropped and the regression fits and CIs are unchanged.
+
+```{r load_data}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(knitr)
+library(kableExtra)
+
+# Color scheme
+ga_colors <- c(
+ "Extremely Preterm" = "#030403", # ' updated palette (eyedropper)
+ "Very Preterm" = "#DE1567",
+ "Late Preterm" = "#7BACDC"
+)
+ga_labels_short <- c("Extremely Preterm" = "EP",
+ "Very Preterm" = "VP",
+ "Late Preterm" = "LP")
+
+fmt_p <- function(p) {
+ if (is.na(p)) return("NA")
+ if (p < 0.001) return("< 0.001")
+ sprintf("%.3f", p)
+}
+
+# --- Load US data ---
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
+us_raw <- read_excel(data_file, sheet = "Ultrasound")
+
+us_data <- us_raw %>%
+ mutate(
+ GA_Category = factor(
+ case_when(
+ GA_weeks < 28 ~ "Extremely Preterm",
+ GA_weeks < 32 ~ "Very Preterm",
+ TRUE ~ "Late Preterm"
+ ),
+ levels = c("Extremely Preterm", "Very Preterm", "Late Preterm")
+ ),
+ Study_ID = as.character(Study_ID),
+ across(c(Coronal_Height, Coronal_Transverse, Coronal_Area,
+ Midsag_AP, Midsag_Height, Midsag_Area), as.numeric)
+ ) %>%
+ filter(!is.na(PMA_weeks) & PMA_weeks >= 23 & PMA_weeks <= 45)
+
+# --- IQR outlier detection (k=3) ---
+iqr_outlier <- function(x, k = 3) {
+ q1 <- quantile(x, 0.25, na.rm = TRUE)
+ q3 <- quantile(x, 0.75, na.rm = TRUE)
+ iqr <- q3 - q1
+ x < (q1 - k * iqr) | x > (q3 + k * iqr)
+}
+
+# === CORONAL ===
+us_data <- us_data %>%
+ mutate(
+ IQR_out_Height = iqr_outlier(Coronal_Height, k = 3),
+ IQR_out_Trans = iqr_outlier(Coronal_Transverse, k = 3),
+ IQR_out_CArea = iqr_outlier(Coronal_Area, k = 3),
+ Coronal_Height = ifelse(IQR_out_Height, NA, Coronal_Height),
+ Coronal_Transverse = ifelse(IQR_out_Trans, NA, Coronal_Transverse),
+ Coronal_Area = ifelse(IQR_out_CArea, NA, Coronal_Area)
+ )
+
+cor_cols <- c("Coronal_Height", "Coronal_Transverse", "Coronal_Area")
+cor_for_weights <- us_data %>% select(all_of(cor_cols)) %>% filter(complete.cases(.))
+cor_mat <- cor(cor_for_weights, use = "pairwise.complete.obs")
+mean_r <- sapply(1:3, function(i) mean(abs(cor_mat[i, -i])))
+raw_w <- 1 - mean_r
+cor_weights <- raw_w / sum(raw_w)
+names(cor_weights) <- cor_cols
+
+us_data <- us_data %>%
+ mutate(
+ Cor_Height_z = as.numeric(scale(Coronal_Height)),
+ Cor_Trans_z = as.numeric(scale(Coronal_Transverse)),
+ Cor_Area_z = as.numeric(scale(Coronal_Area)),
+ US_Coronal_Composite = cor_weights[1] * Cor_Height_z +
+ cor_weights[2] * Cor_Trans_z +
+ cor_weights[3] * Cor_Area_z
+ )
+
+# Filter to valid coronal before midsagittal
+us_data <- us_data %>% filter(!is.na(US_Coronal_Composite))
+
+# === MIDSAGITTAL ===
+us_data <- us_data %>%
+ mutate(
+ IQR_out_MAP = iqr_outlier(Midsag_AP, k = 3),
+ IQR_out_MHt = iqr_outlier(Midsag_Height, k = 3),
+ IQR_out_MAr = iqr_outlier(Midsag_Area, k = 3),
+ Midsag_AP = ifelse(IQR_out_MAP, NA, Midsag_AP),
+ Midsag_Height = ifelse(IQR_out_MHt, NA, Midsag_Height),
+ Midsag_Area = ifelse(IQR_out_MAr, NA, Midsag_Area)
+ )
+
+mid_cols <- c("Midsag_AP", "Midsag_Height", "Midsag_Area")
+mid_for_weights <- us_data %>% select(all_of(mid_cols)) %>% filter(complete.cases(.))
+mid_mat <- cor(mid_for_weights, use = "pairwise.complete.obs")
+mid_mean_r <- sapply(1:3, function(i) mean(abs(mid_mat[i, -i])))
+mid_raw_w <- 1 - mid_mean_r
+mid_weights <- mid_raw_w / sum(mid_raw_w)
+names(mid_weights) <- mid_cols
+
+us_data <- us_data %>%
+ mutate(
+ Mid_AP_z = as.numeric(scale(Midsag_AP)),
+ Mid_Ht_z = as.numeric(scale(Midsag_Height)),
+ Mid_Area_z = as.numeric(scale(Midsag_Area)),
+ US_Midsag_Composite = mid_weights[1] * Mid_AP_z +
+ mid_weights[2] * Mid_Ht_z +
+ mid_weights[3] * Mid_Area_z
+ )
+
+us_data_ms <- us_data %>% filter(!is.na(US_Midsag_Composite))
+
+cat("US data:", nrow(us_data), "scans,", n_distinct(us_data$Study_ID), "patients\n")
+cat("By group:", paste(names(table(us_data$GA_Category)), table(us_data$GA_Category), sep = "=", collapse = ", "), "\n")
+```
+
+---
+
+# Figure S7: Shared-Axes Scatter Plots Across PMA
+
+Individual US scans plotted against postmenstrual age, split by GA group (EP, VP, LP) and combined ("All"), with linear regression fits and 95% CIs. Every subpanel in a given row uses identical x and y ranges.
+
+```{r compute_shared_limits}
+# Shared x-axis: PMA range across the whole US dataset
+x_min <- floor(min(us_data$PMA_weeks, na.rm = TRUE))
+x_max <- ceiling(max(us_data$PMA_weeks, na.rm = TRUE))
+
+# Shared y-axis for Coronal row
+cor_y_min <- floor(min(us_data$US_Coronal_Composite, na.rm = TRUE) * 2) / 2
+cor_y_max <- ceiling(max(us_data$US_Coronal_Composite, na.rm = TRUE) * 2) / 2
+
+# Shared y-axis for Midsagittal row
+mid_y_min <- floor(min(us_data_ms$US_Midsag_Composite, na.rm = TRUE) * 2) / 2
+mid_y_max <- ceiling(max(us_data_ms$US_Midsag_Composite, na.rm = TRUE) * 2) / 2
+
+cat(sprintf("Shared x-axis (PMA): [%g, %g]\n", x_min, x_max))
+cat(sprintf("Shared Coronal y-axis: [%g, %g]\n", cor_y_min, cor_y_max))
+cat(sprintf("Shared Midsag y-axis: [%g, %g]\n", mid_y_min, mid_y_max))
+```
+
+```{r scatter_functions}
+# --- Scatter plot function with shared axis limits ---
+make_ga_scatter <- function(data, y_var, y_label, ga_group = NULL,
+ panel_title = NULL, show_legend = FALSE,
+ xlim_shared = NULL, ylim_shared = NULL) {
+ if (!is.null(ga_group)) {
+ dat <- data %>% filter(GA_Category == ga_group, !is.na(.data[[y_var]]))
+ color_val <- ga_colors[ga_group]
+ } else {
+ dat <- data %>% filter(!is.na(.data[[y_var]]))
+ }
+
+ if (nrow(dat) < 3) return(NULL)
+
+ p <- ggplot(dat, aes(x = PMA_weeks, y = .data[[y_var]]))
+
+ if (is.null(ga_group)) {
+ # All groups: color by GA
+ p <- p +
+ geom_point(aes(color = GA_Category), alpha = 1, size = 1.8) +
+ geom_smooth(aes(color = GA_Category, fill = GA_Category),
+ method = "lm", se = TRUE, alpha = 0.12, linewidth = 1) +
+ scale_color_manual(values = ga_colors,
+ labels = ga_labels_short, name = NULL) +
+ scale_fill_manual(values = ga_colors,
+ labels = ga_labels_short, name = NULL)
+ } else {
+ # Single group: one color
+ p <- p +
+ geom_point(color = color_val, alpha = 1, size = 1.8) +
+ geom_smooth(method = "lm", se = TRUE, color = color_val, fill = color_val,
+ alpha = 0.15, linewidth = 1)
+ }
+
+ p <- p +
+ labs(x = "Post-menstrual age (weeks)", y = y_label, title = panel_title) +
+ theme_bw(base_size = 12) +
+ theme(
+ panel.grid = element_blank(), # no gridlines
+ panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.4), # full box
+ panel.background = element_rect(fill = "white", colour = NA),
+ axis.title = element_text(size = 13),
+ axis.text = element_text(size = 11),
+ plot.title = element_text(face = "plain", size = 13),
+ legend.text = element_text(size = 12),
+ legend.position = ifelse(show_legend, "bottom", "none")
+ )
+
+ # Enforce shared axis limits without dropping data (coord_cartesian)
+ if (!is.null(xlim_shared) || !is.null(ylim_shared)) {
+ p <- p + coord_cartesian(xlim = xlim_shared, ylim = ylim_shared)
+ }
+
+ return(p)
+}
+
+# --- Slope comparison function (for VP-EP, LP-EP annotations) ---
+get_slope_comparisons <- function(data, y_var) {
+ groups <- levels(data$GA_Category)
+  slopes <- list()
+ for (g in groups) {
+ d <- data %>% filter(GA_Category == g, !is.na(.data[[y_var]]))
+ if (nrow(d) > 3) {
+ fit <- lm(as.formula(paste(y_var, "~ PMA_weeks")), data = d)
+ slopes[[g]] <- list(
+ slope = coef(fit)["PMA_weeks"],
+ se = summary(fit)$coefficients["PMA_weeks", "Std. Error"],
+ n = nrow(d)
+ )
+ }
+ }
+
+  comparisons <- data.frame()
+ pairs <- list(c("Very Preterm", "Extremely Preterm"),
+ c("Late Preterm", "Extremely Preterm"))
+ pair_labels <- c("VP\u2013EP", "LP\u2013EP")
+
+ for (i in seq_along(pairs)) {
+ g1 <- pairs[[i]][1]; g2 <- pairs[[i]][2]
+ if (g1 %in% names(slopes) & g2 %in% names(slopes)) {
+ diff <- slopes[[g1]]$slope - slopes[[g2]]$slope
+ se_diff <- sqrt(slopes[[g1]]$se^2 + slopes[[g2]]$se^2)
+ ci_lower <- diff - 1.96 * se_diff
+ ci_upper <- diff + 1.96 * se_diff
+ sig <- ifelse(ci_lower > 0 | ci_upper < 0, "*", "")
+
+ comparisons <- rbind(comparisons, data.frame(
+ Label = pair_labels[i],
+ Diff = round(diff, 3),
+ CI = sprintf("95%%CI (%.1f, %.1f)%s", ci_lower, ci_upper, sig),
+ stringsAsFactors = FALSE
+ ))
+ }
+ }
+ comparisons
+}
+```
+
+```{r fig_s4, fig.width=14, fig.height=8}
+cor_xlim <- c(x_min, x_max)
+cor_ylim <- c(cor_y_min, cor_y_max)
+mid_xlim <- c(x_min, x_max)
+mid_ylim <- c(mid_y_min, mid_y_max)
+
+# === Row 1: Coronal ===
+p_cor_ep <- make_ga_scatter(us_data, "US_Coronal_Composite", "Coronal Composite (Z-score)",
+ "Extremely Preterm", "EP",
+ xlim_shared = cor_xlim, ylim_shared = cor_ylim)
+p_cor_vp <- make_ga_scatter(us_data, "US_Coronal_Composite", "Coronal Composite (Z-score)",
+ "Very Preterm", "VP",
+ xlim_shared = cor_xlim, ylim_shared = cor_ylim)
+p_cor_lp <- make_ga_scatter(us_data, "US_Coronal_Composite", "Coronal Composite (Z-score)",
+ "Late Preterm", "LP",
+ xlim_shared = cor_xlim, ylim_shared = cor_ylim)
+p_cor_all <- make_ga_scatter(us_data, "US_Coronal_Composite", "Coronal Composite (Z-score)",
+ NULL, "All",
+ xlim_shared = cor_xlim, ylim_shared = cor_ylim)
+
+# Slope comparison annotations on "All" — anchor to shared-axis corner
+cor_comps <- get_slope_comparisons(us_data, "US_Coronal_Composite")
+if (nrow(cor_comps) > 0) {
+ for (j in seq_len(nrow(cor_comps))) {
+ p_cor_all <- p_cor_all +
+ annotate("text",
+ x = cor_xlim[2] - 0.5,
+ y = cor_ylim[1] + 0.15 + (j - 1) * 0.35,
+ label = paste0(cor_comps$Label[j], ": ", cor_comps$CI[j]),
+ hjust = 1, size = 2.8, fontface = "plain")
+ }
+}
+
+# === Row 2: Midsagittal ===
+p_mid_ep <- make_ga_scatter(us_data_ms, "US_Midsag_Composite", "Midsag Composite (Z-score)",
+ "Extremely Preterm", "EP",
+ xlim_shared = mid_xlim, ylim_shared = mid_ylim)
+p_mid_vp <- make_ga_scatter(us_data_ms, "US_Midsag_Composite", "Midsag Composite (Z-score)",
+ "Very Preterm", "VP",
+ xlim_shared = mid_xlim, ylim_shared = mid_ylim)
+p_mid_lp <- make_ga_scatter(us_data_ms, "US_Midsag_Composite", "Midsag Composite (Z-score)",
+ "Late Preterm", "LP",
+ xlim_shared = mid_xlim, ylim_shared = mid_ylim)
+p_mid_all <- make_ga_scatter(us_data_ms, "US_Midsag_Composite", "Midsag Composite (Z-score)",
+ NULL, "All",
+ xlim_shared = mid_xlim, ylim_shared = mid_ylim)
+
+mid_comps <- get_slope_comparisons(us_data_ms, "US_Midsag_Composite")
+if (nrow(mid_comps) > 0) {
+ for (j in seq_len(nrow(mid_comps))) {
+ p_mid_all <- p_mid_all +
+ annotate("text",
+ x = mid_xlim[2] - 0.5,
+ y = mid_ylim[1] + 0.15 + (j - 1) * 0.35,
+ label = paste0(mid_comps$Label[j], ": ", mid_comps$CI[j]),
+ hjust = 1, size = 2.8, fontface = "plain")
+ }
+}
+
+# === Combine 2-row layout ===
+row_cor <- (p_cor_ep | p_cor_vp | p_cor_lp | p_cor_all)
+row_mid <- (p_mid_ep | p_mid_vp | p_mid_lp | p_mid_all)
+
+fig_s4 <- (row_cor / row_mid) +
+ plot_layout(guides = "collect") &
+ theme(legend.position = "bottom")
+
+print(fig_s4)
+
+ggsave("Figure_S7_US_Trajectories.pdf",
+ fig_s4, width = 14, height = 8, dpi = 300)
+
+# === Save individual panels ===
+ggsave("Figure_S7A_Coronal_EP.pdf",
+ p_cor_ep, width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7B_Coronal_VP.pdf",
+ p_cor_vp, width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7C_Coronal_LP.pdf",
+ p_cor_lp, width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7D_Coronal_All.pdf",
+ p_cor_all + theme(legend.position = "bottom"),
+ width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7E_Midsag_EP.pdf",
+ p_mid_ep, width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7F_Midsag_VP.pdf",
+ p_mid_vp, width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7G_Midsag_LP.pdf",
+ p_mid_lp, width = 3.5, height = 4, dpi = 300)
+ggsave("Figure_S7H_Midsag_All.pdf",
+ p_mid_all + theme(legend.position = "bottom"),
+ width = 3.5, height = 4, dpi = 300)
+```
+
+---
+
+# Axis Notes
+
+- All eight panels use the same x-axis range (`r sprintf("[%g, %g]", x_min, x_max)` PMA weeks).
+- The four Coronal panels share a y-range of `r sprintf("[%g, %g]", cor_y_min, cor_y_max)`.
+- The four Midsagittal panels share a y-range of `r sprintf("[%g, %g]", mid_y_min, mid_y_max)`.
+- Limits are applied with `coord_cartesian`, so no data are dropped — the regression fits and CIs are identical to per-panel scaling; only the display ranges change.
+
+---
+
+# Slope Comparison Tables
+
+## Linear Growth Slopes by GA Group
+
+```{r slope_table}
+slope_table <- data.frame()
+
+for (comp_info in list(
+ list(var = "US_Coronal_Composite", label = "Coronal"),
+ list(var = "US_Midsag_Composite", label = "Midsagittal")
+)) {
+ dat_use <- if (comp_info$var == "US_Midsag_Composite") us_data_ms else us_data
+ for (g in levels(us_data$GA_Category)) {
+ d <- dat_use %>% filter(GA_Category == g, !is.na(.data[[comp_info$var]]))
+ if (nrow(d) > 3) {
+ fit <- lm(as.formula(paste(comp_info$var, "~ PMA_weeks")), data = d)
+ ci <- confint(fit)["PMA_weeks", ]
+ slope_table <- rbind(slope_table, data.frame(
+ Composite = comp_info$label,
+ GA_Group = ga_labels_short[g],
+ N_scans = nrow(d),
+ N_patients = n_distinct(d$Study_ID),
+ Slope = round(coef(fit)["PMA_weeks"], 4),
+ SE = round(summary(fit)$coefficients["PMA_weeks", "Std. Error"], 4),
+ CI = sprintf("[%.4f, %.4f]", ci[1], ci[2]),
+ p_value = fmt_p(summary(fit)$coefficients["PMA_weeks", "Pr(>|t|)"]),
+ stringsAsFactors = FALSE
+ ))
+ }
+ }
+}
+
+kable(slope_table, row.names = FALSE,
+ col.names = c("Composite", "GA Group", "N Scans", "N Patients",
+ "Slope (per wk)", "SE", "95% CI", "p-value"),
+ caption = "Linear Growth Slopes by GA Group (OLS)") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Pairwise Slope Differences
+
+```{r slope_diff_table}
+all_comps <- rbind(
+ cor_comps %>% mutate(Composite = "Coronal"),
+ mid_comps %>% mutate(Composite = "Midsagittal")
+)
+
+kable(all_comps, row.names = FALSE,
+ col.names = c("Comparison", "Slope Diff", "95% CI", "Composite"),
+ caption = "Pairwise Slope Differences (B=VP, C=LP, A=EP)") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+ footnote(general = "* indicates 95% CI excludes zero (significant at alpha = 0.05)")
+```
+
+---
+
+# Percent Change Between Timepoints with ANOVA
+
+Comparison of change in cerebellar composite z-scores between first and last US scans across GA groups, tested with one-way ANOVA and Tukey HSD post-hoc.
+
+```{r percent_change}
+# Identify first and last US scans per patient (patients with >= 2 scans)
+patients_multi <- us_data %>%
+ group_by(Study_ID) %>%
+  filter(n() >= 2) %>%
+ ungroup()
+
+first_us <- patients_multi %>%
+ group_by(Study_ID) %>%
+ slice_min(order_by = PMA_weeks, n = 1, with_ties = FALSE) %>%
+ ungroup()
+
+last_us <- patients_multi %>%
+ group_by(Study_ID) %>%
+ slice_max(order_by = PMA_weeks, n = 1, with_ties = FALSE) %>%
+ ungroup()
+
+# Merge first and last
+change_data <- first_us %>%
+ select(Study_ID, GA_Category,
+ PMA_First = PMA_weeks,
+ Coronal_First = US_Coronal_Composite,
+ Midsag_First = US_Midsag_Composite) %>%
+ inner_join(
+ last_us %>%
+ select(Study_ID,
+ PMA_Last = PMA_weeks,
+ Coronal_Last = US_Coronal_Composite,
+ Midsag_Last = US_Midsag_Composite),
+ by = "Study_ID"
+ ) %>%
+ mutate(
+ PMA_Interval = PMA_Last - PMA_First,
+ Coronal_Change = Coronal_Last - Coronal_First,
+ Midsag_Change = Midsag_Last - Midsag_First,
+ Coronal_Rate = Coronal_Change / PMA_Interval,
+ Midsag_Rate = Midsag_Change / PMA_Interval
+ ) %>%
+ filter(PMA_Interval > 0)
+
+cat("Patients with >= 2 scans and PMA interval > 0:", nrow(change_data), "\n")
+```
+
+## Summary: Change Between First and Last US
+
+```{r change_summary}
+change_summary <- change_data %>%
+ group_by(GA_Category) %>%
+ summarise(
+ N = n(),
+ PMA_First = sprintf("%.1f (%.1f)", mean(PMA_First), sd(PMA_First)),
+ PMA_Last = sprintf("%.1f (%.1f)", mean(PMA_Last), sd(PMA_Last)),
+ Interval_wk = sprintf("%.1f (%.1f)", mean(PMA_Interval), sd(PMA_Interval)),
+ Cor_Change = sprintf("%.3f (%.3f)", mean(Coronal_Change, na.rm = TRUE), sd(Coronal_Change, na.rm = TRUE)),
+ Cor_Rate = sprintf("%.4f (%.4f)", mean(Coronal_Rate, na.rm = TRUE), sd(Coronal_Rate, na.rm = TRUE)),
+ Mid_Change = sprintf("%.3f (%.3f)", mean(Midsag_Change, na.rm = TRUE), sd(Midsag_Change, na.rm = TRUE)),
+ Mid_Rate = sprintf("%.4f (%.4f)", mean(Midsag_Rate, na.rm = TRUE), sd(Midsag_Rate, na.rm = TRUE)),
+ .groups = "drop"
+ )
+
+kable(change_summary,
+ col.names = c("GA Group", "N", "First PMA (wk)", "Last PMA (wk)", "Interval (wk)",
+ "Coronal \u0394z", "Coronal \u0394z/wk",
+ "Midsag \u0394z", "Midsag \u0394z/wk"),
+ caption = "Change Between First and Last US Scan by GA Group (Mean (SD))") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## ANOVA: Change in Composite by GA Group
+
+```{r anova_change}
+anova_results <- data.frame()
+
+for (measure_info in list(
+ list(var = "Coronal_Change", rate_var = "Coronal_Rate", label = "Coronal"),
+ list(var = "Midsag_Change", rate_var = "Midsag_Rate", label = "Midsagittal")
+)) {
+ dat_change <- change_data %>% filter(!is.na(.data[[measure_info$var]]))
+ aov_change <- aov(as.formula(paste(measure_info$var, "~ GA_Category")), data = dat_change)
+ aov_p <- summary(aov_change)[[1]][["Pr(>F)"]][1]
+
+ tukey_change <- TukeyHSD(aov_change)$GA_Category
+
+ for (pair in rownames(tukey_change)) {
+ anova_results <- rbind(anova_results, data.frame(
+ Region = measure_info$label,
+ Measure = "Absolute change (\u0394z)",
+ Comparison = pair,
+ Diff = round(tukey_change[pair, "diff"], 4),
+ CI = sprintf("[%.4f, %.4f]", tukey_change[pair, "lwr"], tukey_change[pair, "upr"]),
+ p_adj = fmt_p(tukey_change[pair, "p adj"]),
+ ANOVA_p = fmt_p(aov_p),
+ stringsAsFactors = FALSE
+ ))
+ }
+
+ dat_rate <- change_data %>% filter(!is.na(.data[[measure_info$rate_var]]))
+ aov_rate <- aov(as.formula(paste(measure_info$rate_var, "~ GA_Category")), data = dat_rate)
+ aov_rate_p <- summary(aov_rate)[[1]][["Pr(>F)"]][1]
+
+ tukey_rate <- TukeyHSD(aov_rate)$GA_Category
+
+ for (pair in rownames(tukey_rate)) {
+ anova_results <- rbind(anova_results, data.frame(
+ Region = measure_info$label,
+ Measure = "Rate of change (\u0394z/wk)",
+ Comparison = pair,
+ Diff = round(tukey_rate[pair, "diff"], 4),
+ CI = sprintf("[%.4f, %.4f]", tukey_rate[pair, "lwr"], tukey_rate[pair, "upr"]),
+ p_adj = fmt_p(tukey_rate[pair, "p adj"]),
+ ANOVA_p = fmt_p(aov_rate_p),
+ stringsAsFactors = FALSE
+ ))
+ }
+}
+
+kable(anova_results, row.names = FALSE,
+ col.names = c("Region", "Measure", "Comparison", "Mean Diff", "95% CI",
+ "Tukey p (adj)", "ANOVA p"),
+ caption = "ANOVA + Tukey HSD: Change Between First and Last US by GA Group") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## ANOVA: Cross-Sectional Comparison at Key Timepoints
+
+To complement the longitudinal change analysis, we also compare composite z-scores across GA groups at specific PMA windows using one-way ANOVA with Tukey HSD post-hoc tests.
+
+```{r anova_timepoint}
+timepoint_anova <- data.frame()
+
+for (target_pma in c(28, 33, 35)) {
+ window <- 2
+
+ for (comp_info in list(
+ list(var = "US_Coronal_Composite", label = "Coronal"),
+ list(var = "US_Midsag_Composite", label = "Midsagittal")
+ )) {
+ dat_tp <- us_data %>%
+ filter(PMA_weeks >= (target_pma - window) & PMA_weeks <= (target_pma + window),
+ !is.na(.data[[comp_info$var]])) %>%
+ group_by(Study_ID) %>%
+ mutate(dist = abs(PMA_weeks - target_pma)) %>%
+ slice_min(order_by = dist, n = 1, with_ties = FALSE) %>%
+ ungroup()
+
+ group_n <- dat_tp %>% group_by(GA_Category) %>% summarise(n = n(), .groups = "drop") %>% filter(n >= 2)
+ dat_tp <- dat_tp %>% filter(GA_Category %in% group_n$GA_Category) %>%
+ mutate(GA_Category = droplevels(GA_Category))
+
+ if (length(unique(dat_tp$GA_Category)) >= 2) {
+ aov_fit <- aov(as.formula(paste(comp_info$var, "~ GA_Category")), data = dat_tp)
+ aov_p <- summary(aov_fit)[[1]][["Pr(>F)"]][1]
+
+ if (length(unique(dat_tp$GA_Category)) >= 2) {
+ tukey_fit <- TukeyHSD(aov_fit)$GA_Category
+
+ for (pair in rownames(tukey_fit)) {
+ timepoint_anova <- rbind(timepoint_anova, data.frame(
+ Timepoint = paste0(target_pma, " wk PMA"),
+ Region = comp_info$label,
+ Comparison = pair,
+ N = nrow(dat_tp),
+ Diff = round(tukey_fit[pair, "diff"], 3),
+ CI = sprintf("[%.3f, %.3f]", tukey_fit[pair, "lwr"], tukey_fit[pair, "upr"]),
+ p_adj = fmt_p(tukey_fit[pair, "p adj"]),
+ ANOVA_p = fmt_p(aov_p),
+ stringsAsFactors = FALSE
+ ))
+ }
+ }
+ }
+ }
+}
+
+kable(timepoint_anova, row.names = FALSE,
+ col.names = c("Timepoint", "Region", "Comparison", "N", "Mean Diff",
+ "95% CI", "Tukey p (adj)", "ANOVA p"),
+ caption = "Cross-Sectional ANOVA + Tukey HSD at Key PMA Timepoints") %>%
+ kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Session Info
+
+```{r session_info}
+sessionInfo()
+```

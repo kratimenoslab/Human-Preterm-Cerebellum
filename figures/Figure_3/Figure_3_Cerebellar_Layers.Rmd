@@ -72,12 +72,12 @@ library(kableExtra)
 1. **Source**: Histological sections from preterm (<37 wks GA) and term (≥37 wks GA) cerebellar tissue
 2. **Quantification**: Deep learning-based layer segmentation from H&E-stained WSIs
 3. **Normalization**: Layer areas normalized to molecular layer length; PC density per mm ML
-4. **Input file**: `Datasets/Dataset_Cerebellar_Layers.xlsx`, sheet = "Cerebellar_Layers"
+4. **Input file**: `Datasets/Data_S2_Postmortem_Histology.xlsx`, sheet = "Cerebellar_Layers"
 
 ## Data Loading
 
 ```{r load-data, include=FALSE}
-data <- read_excel(find_dataset(c("Dataset_Cerebellar_Layers.xlsx")), sheet = "Cerebellar_Layers")
+data <- read_excel(find_dataset("Data_S2_Postmortem_Histology.xlsx"), sheet = "Cerebellar_Layers")
 
 data <- data %>%
  mutate(Group = factor(Group, levels = c("Preterm", "Term")))

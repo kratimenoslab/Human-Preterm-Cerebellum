@@ -1813,7 +1813,7 @@ Age</h1>
 <h3 class="subtitle">PMA-Adjusted Linear Regression (Volumetric MRI
 Cohort, N = 120)</h3>
 <h4 class="author"></h4>
-<h4 class="date">2026-08-06 15:30:18</h4>
+<h4 class="date">2026-09-03 10:54:16</h4>
 
 </div>
 
@@ -1997,13 +1997,12 @@ No additional subjects excluded (all within fences)
 </tbody>
 </table>
 <p><strong>Data Source:</strong>
-<code>Supplementary_Datasets/Dataset_Clinical_MRI_US_ND.xlsx</code>,
-sheet = “MRI”. The sheet contains all 123 subjects with automated
-cerebellar 3D segmentation; 3 subjects are excluded (IDs 57, 104, 469)
-and marked via the <code>Included</code> and
-<code>Exclusion_Reason</code> columns. The code below filters to
-<code>Included == &quot;Yes&quot;</code> to obtain the analytic sample (N =
-120).</p>
+<code>Supplementary_Datasets/Data_S1_InVivo_Cohort.xlsx</code>, sheet =
+“MRI”. The sheet contains all 123 subjects with automated cerebellar 3D
+segmentation; 3 subjects are excluded (IDs 57, 104, 469) and marked via
+the <code>Included</code> and <code>Exclusion_Reason</code> columns. The
+code below filters to <code>Included == &quot;Yes&quot;</code> to obtain the
+analytic sample (N = 120).</p>
 </div>
 <div id="load-data" class="section level2">
 <h2>Load Data</h2>
@@ -2012,7 +2011,7 @@ and marked via the <code>Included</code> and
 # Sheet contains all 123 subjects with segmentation data;
 # filter to Included == &quot;Yes&quot; for the analytic sample (N = 120)
 # ============================================================
-data_file &lt;- find_dataset(c(&quot;Dataset_Clinical_MRI_US_ND.xlsx&quot;, &quot;Dataset_S1_Clinical_MRI_US_ND.xlsx&quot;))
+data_file &lt;- find_dataset(&quot;Data_S1_InVivo_Cohort.xlsx&quot;)
 df_all &lt;- read_excel(data_file, sheet = &quot;MRI&quot;)
 
 # Show what was excluded

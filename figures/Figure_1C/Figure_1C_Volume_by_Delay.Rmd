@@ -66,7 +66,7 @@ ga_colors <- c("Extremely Preterm" = "#030403", # ' updated palette (eyedropper)
  "Late Preterm" = "#7BACDC")
 ga_labels_short <- c("Extremely Preterm" = "EP", "Very Preterm" = "VP", "Late Preterm" = "LP")
 
-data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
 
 # --- MRI (volumetric) ---
 mri <- read_excel(data_file, sheet = "MRI") %>%

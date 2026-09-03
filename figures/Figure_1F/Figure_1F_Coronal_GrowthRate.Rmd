@@ -44,7 +44,7 @@ library(knitr); library(kableExtra)
 # Data + coronal composite (reproduces old S4 pipeline)
 
 ```{r load-composite}
-data_file <- find_dataset(c("Dataset_Clinical_MRI_US_ND.xlsx", "Dataset_S1_Clinical_MRI_US_ND.xlsx"))
+data_file <- find_dataset("Data_S1_InVivo_Cohort.xlsx")
 
 us_data <- read_excel(data_file, sheet = "Ultrasound") %>%
  mutate(

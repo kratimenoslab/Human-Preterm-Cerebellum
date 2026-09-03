@@ -7903,7 +7903,7 @@ Colours use the Okabe-Ito colour-blind-safe palette.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="A.-In-vivo-cohort">A. In-vivo cohort<a class="anchor-link" href="#A.-In-vivo-cohort">¶</a></h2><p>Membership from the study's de-identified cohort key (<code>Dataset_Cohort_Membership.xlsx</code>, <code>InVivo_Cohort</code> sheet): US / MRI as flagged; neurodevelopmental follow-up counted for the <strong>analytic</strong> window only (ND recorded <strong>and</strong> GA group EP or VP), matching the manuscript's ND-analytic definition.</p>
+<h2 id="A.-In-vivo-cohort">A. In-vivo cohort<a class="anchor-link" href="#A.-In-vivo-cohort">¶</a></h2><p>Membership from the study's de-identified cohort key (<code>Data_S1_InVivo_Cohort.xlsx</code>, <code>InVivo_Cohort</code> sheet): US / MRI as flagged; neurodevelopmental follow-up counted for the <strong>analytic</strong> window only (ND recorded <strong>and</strong> GA group EP or VP), matching the manuscript's ND-analytic definition.</p>
 </div>
 </div>
 </div>
@@ -7915,7 +7915,7 @@ Colours use the Okabe-Ito colour-blind-safe palette.</p>
 <div class="jp-InputPrompt jp-InputArea-prompt">In [3]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">iv_path</span> <span class="o">=</span> <span class="n">find_dataset</span><span class="p">(</span><span class="s2">"Dataset_Cohort_Membership.xlsx"</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">iv_path</span> <span class="o">=</span> <span class="n">find_dataset</span><span class="p">(</span><span class="s2">"Data_S1_InVivo_Cohort.xlsx"</span><span class="p">)</span>
 <span class="n">header</span><span class="p">,</span> <span class="n">rows</span> <span class="o">=</span> <span class="n">read_sheet</span><span class="p">(</span><span class="n">iv_path</span><span class="p">,</span> <span class="s2">"InVivo_Cohort"</span><span class="p">)</span>
 <span class="n">col</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">header</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"Study_ID"</span><span class="p">,</span> <span class="s2">"US"</span><span class="p">,</span> <span class="s2">"MRI"</span><span class="p">,</span> <span class="s2">"ND"</span><span class="p">,</span> <span class="s2">"GA_Group"</span><span class="p">)}</span>
 
@@ -7964,7 +7964,7 @@ Colours use the Okabe-Ito colour-blind-safe palette.</p>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="B.-Post-mortem-cohort">B. Post-mortem cohort<a class="anchor-link" href="#B.-Post-mortem-cohort">¶</a></h2><p>Membership from the study's de-identified cohort key (<code>Dataset_Cohort_Membership.xlsx</code>, <code>Postmortem_Cohort</code> sheet): <code>Histology</code> (deep-learning neuropathology), <code>Spatial</code> (spatial transcriptomics), and <em>In situ</em> validation = subjects assayed by <strong>RNAScope</strong> <em>or</em> immunofluorescence (<strong>VGLUT1</strong> or <strong>VGLUT2</strong>).</p>
+<h2 id="B.-Post-mortem-cohort">B. Post-mortem cohort<a class="anchor-link" href="#B.-Post-mortem-cohort">¶</a></h2><p>Membership from the study's de-identified cohort key (<code>Data_S2_Postmortem_Histology.xlsx</code>, <code>Postmortem_Cohort</code> sheet): <code>Histology</code> (deep-learning neuropathology), <code>Spatial</code> (spatial transcriptomics), and <em>In situ</em> validation = subjects assayed by <strong>RNAScope</strong> <em>or</em> immunofluorescence (<strong>VGLUT1</strong> or <strong>VGLUT2</strong>).</p>
 </div>
 </div>
 </div>
@@ -7976,7 +7976,7 @@ Colours use the Okabe-Ito colour-blind-safe palette.</p>
 <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">pm_path</span> <span class="o">=</span> <span class="n">find_dataset</span><span class="p">(</span><span class="s2">"Dataset_Cohort_Membership.xlsx"</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">pm_path</span> <span class="o">=</span> <span class="n">find_dataset</span><span class="p">(</span><span class="s2">"Data_S2_Postmortem_Histology.xlsx"</span><span class="p">)</span>
 <span class="n">header</span><span class="p">,</span> <span class="n">rows</span> <span class="o">=</span> <span class="n">read_sheet</span><span class="p">(</span><span class="n">pm_path</span><span class="p">,</span> <span class="s2">"Postmortem_Cohort"</span><span class="p">)</span>
 <span class="n">col</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">header</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"Paper_ID"</span><span class="p">,</span> <span class="s2">"Histology"</span><span class="p">,</span> <span class="s2">"Spatial"</span><span class="p">,</span> <span class="s2">"RNAScope"</span><span class="p">,</span> <span class="s2">"IF_VGLUT1"</span><span class="p">,</span> <span class="s2">"IF_VGLUT2"</span><span class="p">)}</span>
 
