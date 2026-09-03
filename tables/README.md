@@ -6,8 +6,8 @@ holds its script (`.Rmd` / `.R`) and its rendered self-contained report (`.html`
 ## Data
 
 As with the figures, scripts read the **de-identified Supplementary Data S1 to S5 published with the article**
-through **relative paths only** (place the Data S1–S5 files, with Data S4 unzipped, in a
-`Supplementary_Datasets/` folder at the repository root). No machine-
+through **relative paths only** (place the Data S1–S5 files in a `Supplementary_Datasets/` folder at the
+repository root; Data S4 is extracted from its zip automatically). No machine-
 or user-specific path is embedded.
 
 ## Units

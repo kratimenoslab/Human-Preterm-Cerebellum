@@ -10,8 +10,8 @@ The scripts read the **de-identified source data published with the article as S
 (`Data_S1_InVivo_Cohort.xlsx`, `Data_S2_Postmortem_Histology.xlsx`, `Data_S3_SpatialTx_Tables.xlsx`,
 `Data_S4_SpatialTx_SpotMatrices.zip` → two CSV files, `Data_S5_InSitu_Validation.xlsx`). They resolve inputs
 through **relative paths only** — a finder walks up to a `Supplementary_Datasets/` folder — so to run a unit
-locally, download the Data S1–S5 files (unzip Data S4) into a `Supplementary_Datasets/` folder at the
-repository root. No machine- or user-specific path is embedded
+locally, download the Data S1–S5 files into a `Supplementary_Datasets/` folder at the repository root
+(the two units that use Data S4 extract its CSV files from the zip automatically). No machine- or user-specific path is embedded
 in any script or rendered report.
 
 ## Relationship to the analysis pipelines
