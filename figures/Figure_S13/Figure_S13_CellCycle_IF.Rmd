@@ -39,8 +39,8 @@ Panels **A/B** (EGL schematic + IF), **D/E** (IGL), **G/H** (PC) are microscopy 
 
 | Panel | Layer | Markers | Metric |
 |-------|-------|---------|--------|
-| **C** | EGL | MCM2, PCNA, CCNB1, TOP2A | RNAScope H-score (mean ± SEM), Spearman r |
-| **F** | IGL | MCM2, CCNB1, TOP2A | RNAScope H-score (mean ± SEM), Spearman r |
+| **C** | EGL | MCM2, PCNA, CCNB1, TOP2A | RNAScope H-score per ROI, subject mean ± SEM (descriptive; no correlation coefficient shown) |
+| **F** | IGL | MCM2, CCNB1, TOP2A | RNAScope H-score per ROI, subject mean ± SEM (descriptive; no correlation coefficient shown) |
 | **I** | PC | PHH3 | nuclear cluster fraction (subject-level), linear fit |
 
 # Panels C & F -- RNAScope H-scores (EGL, IGL)
@@ -48,21 +48,19 @@ Panels **A/B** (EGL schematic + IF), **D/E** (IGL), **G/H** (PC) are microscopy 
 ```{r hscore-data}
 hscore <- read_excel(find_dataset("Data_S5_InSitu_Validation.xlsx"), sheet = "H_Score_ROI_CellCycle")
 
-# single-marker: jittered ROI points + mean±SEM errorbar/line, Spearman r (top-left)
+# single-marker: jittered ROI points + subject mean±SEM errorbar/line. No correlation coefficient is
+# annotated: with n = 4 subjects, ROIs are not independent replicates, so trends are shown descriptively.
 build_hscore <- function(dat, gene_name, cell, col) {
  pd <- dat %>% filter(Gene == gene_name, Cell_Type == cell)
  rd <- pd %>% group_by(GA) %>%
  summarise(mean_H = mean(H_score, na.rm = TRUE),
  se_H = sd(H_score, na.rm = TRUE) / sqrt(n()), .groups = "drop") %>%
  mutate(lo = pmax(mean_H - se_H, 0), hi = mean_H + se_H)
- sp <- suppressWarnings(cor.test(pd$GA, pd$H_score, method = "spearman", exact = FALSE))
  ggplot() +
  geom_jitter(data = pd, aes(GA, H_score), color = col, size = 1.5, alpha = 0.4, width = 0.3) +
  geom_errorbar(data = rd, aes(GA, ymin = lo, ymax = hi), color = col, width = 1.5, linewidth = 0.6) +
  geom_line(data = rd, aes(GA, mean_H), color = col, linewidth = 0.8) +
  geom_point(data = rd, aes(GA, mean_H), color = col, size = 2.5) +
- annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.4,
- label = sprintf("r = %+.2f", sp$estimate), size = 2.9, color = "grey30", fontface = "italic") +
  scale_x_continuous(breaks = c(23, 28, 34.7, 40), labels = c("23", "28", "34.7", "40")) +
  labs(title = gene_name, x = "Gestational age at birth (weeks)", y = "H-score") +
  theme_classic(base_size = 11) +
@@ -143,16 +141,16 @@ spec <- rbind(
  data.frame(Panel = "C", Layer = "EGL", Marker = c("MCM2","PCNA","CCNB1","TOP2A")),
  data.frame(Panel = "F", Layer = "IGL", Marker = c("MCM2","CCNB1","TOP2A"))
 )
-spec$r <- NA_character_; spec$N_ROI <- NA_integer_
+spec$N_subjects <- NA_integer_; spec$N_ROI <- NA_integer_
 for (i in seq_len(nrow(spec))) {
  pd <- hscore %>% filter(Gene == spec$Marker[i], Cell_Type == spec$Layer[i])
- sp <- suppressWarnings(cor.test(pd$GA, pd$H_score, method = "spearman", exact = FALSE))
- spec$r[i] <- sprintf("%+.2f", sp$estimate); spec$N_ROI[i] <- nrow(pd)
+ spec$N_subjects[i] <- n_distinct(pd$Subject_ID); spec$N_ROI[i] <- nrow(pd)
 }
 ph <- cor.test(subj$GA_weeks, subj$f)
+spec$r <- ""
 spec <- rbind(spec, data.frame(Panel = "I", Layer = "PC", Marker = "PHH3",
- r = sprintf("%+.2f", ph$estimate), N_ROI = nrow(subj)))
-kable(spec, caption = "Spearman r (C/F, ROI-level) and Pearson r (I, subject-level) vs GA") %>%
+ N_subjects = nrow(subj), N_ROI = NA_integer_, r = sprintf("%+.2f", ph$estimate)))
+kable(spec, caption = "Panels C/F: subjects and ROIs per marker (descriptive, no correlation reported). Panel I: Pearson r (subject-level) vs GA") %>%
  kable_styling(bootstrap_options = c("striped","hover","condensed"), full_width = FALSE)
 ```
 
@@ -162,7 +160,8 @@ Source: H-score quantification (panels C/F) + PHH3 immunostaining quantification
 Data: `Data_S5_InSitu_Validation.xlsx` sheet `H_Score_ROI_CellCycle`; `Data_S5_InSitu_Validation.xlsx` sheet `CyclinB_PH3_Cell_Level`.
 **Panel numbering (cell-cycle figure, S12):**
 panel **C = EGL**, **F = IGL**, **I = PHH3** (EGL/IGL labels corrected relative to an earlier version).
-Deck edits: x-axis "Gestational age at birth (weeks)"; annotation "r = ±X.XX" (Spearman rho, top-left); plain titles.
+Deck edits: x-axis "Gestational age at birth (weeks)"; plain titles. Correlation annotations removed from C/F (ROI-level
+coefficients are not reported; n = 4 subjects).
 Marker colours MCM2 #68BB3D / PCNA #DE33AB / CCNB1 #A4AB37 / TOP2A #E03326; PHH3 #EE6677.
 
 # Session Info

@@ -91,7 +91,8 @@ hscore_roi %>%
 # Helpers
 
 ```{r helpers}
-# Deck-matched styling: mean +/- SEM trend, Spearman rho annotation (top-left), plain upright title,
+# Deck-matched styling: mean +/- SEM trend, plain upright title. No correlation coefficient is annotated
+# (n = 4 subjects; ROIs are not independent replicates, so trends are shown descriptively),
 # x-axis titled "Gestational age at birth (weeks)".
 build_hscore_trend <- function(roi_data, gene_name, gene_col) {
  rd <- roi_data %>%
@@ -103,8 +104,6 @@ build_hscore_trend <- function(roi_data, gene_name, gene_col) {
  ) %>%
  mutate(lo = pmax(mean_H - se_H, 0), hi = mean_H + se_H)
 
- rho <- suppressWarnings(cor(roi_data$GA, roi_data$H_score, method = "spearman"))
- rho_lab <- sprintf('italic(rho) == "%+.2f"', rho)
 
  ggplot() +
  geom_jitter(data = roi_data, aes(x = GA, y = H_score),
@@ -115,8 +114,6 @@ build_hscore_trend <- function(roi_data, gene_name, gene_col) {
  color = gene_col, linewidth = 0.8) +
  geom_point(data = rd, aes(x = GA, y = mean_H),
  color = gene_col, size = 2.5) +
- annotate("text", parse = TRUE, x = -Inf, y = Inf, hjust = -0.15, vjust = 1.5,
- label = rho_lab, size = 3.0, colour = "grey20") +
  scale_x_continuous(breaks = c(23, 28, 34.7, 40),
  labels = c("23", "28", "34.7", "40")) +
  labs(title = gene_name, x = "Gestational age at birth (weeks)", y = "H-score") +
