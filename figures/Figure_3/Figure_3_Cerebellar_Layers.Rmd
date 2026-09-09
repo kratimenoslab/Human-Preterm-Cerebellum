@@ -44,9 +44,9 @@ find_dataset <- function(names, subdir = "Supplementary_Datasets", max_up = 6) {
 
 | Panel | Layer | Measurement |
 |-------|-------|-------------|
-| **B** | EGL | External Granular Layer surface area (mm²/mm ML) |
-| **C** | ML | Molecular Layer surface area (mm²/mm ML) |
-| **D** | IGL | Internal Granular Layer surface area (mm²/mm ML) |
+| **B** | EGL | External Granular Layer surface area (µm²/µm ML) |
+| **C** | ML | Molecular Layer surface area (µm²/µm ML) |
+| **D** | IGL | Internal Granular Layer surface area (µm²/µm ML) |
 | **E** | PC | Purkinje Cell density (PCs/mm ML) |
 
 # Libraries
@@ -388,11 +388,11 @@ label_e <- create_label("")
 # CREATE ALL PANELS
 # ============================================================
 egl_panels <- create_panel_pair(data, "EGL_normalized",
- expression(EGL~surface~area~(mm^2/mu*m~ML)))
+ expression(EGL~surface~area~(mu*m^2/mu*m~ML)))
 ml_panels <- create_panel_pair(data, "IGL_normalized", # deck ML = dataset IGL_normalized (flat)
- expression(ML~surface~area~(mm^2/mu*m~ML)))
+ expression(ML~surface~area~(mu*m^2/mu*m~ML)))
 igl_panels <- create_panel_pair(data, "ML_normalized", # deck IGL = dataset ML_normalized (strong growth)
- expression(IGL~surface~area~(mm^2/mu*m~ML)))
+ expression(IGL~surface~area~(mu*m^2/mu*m~ML)))
 pc_panels <- create_panel_pair(data, "PC_count",
  expression(PC~Density~(PCs/mm~ML)))
 

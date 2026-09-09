@@ -97,8 +97,8 @@ res <- do.call(rbind, lapply(names(DS), fit_row))
 # Table S13
 
 ```{r tableS13, echo=FALSE}
-units <- c("EGL area"="EGL area (mm² per µm ML)", "IGL area"="IGL area (mm² per µm ML)",
-           "ML area"="ML area (mm² per µm ML)", "Purkinje cell density"="Purkinje cell density (PCs per mm ML)",
+units <- c("EGL area"="EGL area (µm² per µm ML)", "IGL area"="IGL area (µm² per µm ML)",
+           "ML area"="ML area (µm² per µm ML)", "Purkinje cell density"="Purkinje cell density (PCs per mm ML)",
            "EGL density"="EGL density (cells per mm²)")
 
 S13 <- res %>% transmute(
