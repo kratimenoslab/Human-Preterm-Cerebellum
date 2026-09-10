@@ -1,7 +1,7 @@
 
 library(here)
 # read data
-dat <- read.table(here("enrichment_analysis/project_cogaps/ldsc_results_cogaps.txt"),as.is=T,header=T,sep="\t")
+dat <- read.table(here("enrichment_analysis/project_cogaps/ldsc_results_cogaps.txt"),as.is=T,header=T,sep="\t",quote="")  # quote="" : trait names contain apostrophes (Alzheimer's, Crohn's); the default quote set silently swallowed 7 traits (2026-09-10)
 
 # # Filter for brain disorder traits
 # traits <- c(

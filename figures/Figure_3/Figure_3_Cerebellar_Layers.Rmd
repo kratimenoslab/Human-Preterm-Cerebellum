@@ -389,9 +389,9 @@ label_e <- create_label("")
 # ============================================================
 egl_panels <- create_panel_pair(data, "EGL_normalized",
  expression(EGL~surface~area~(mu*m^2/mu*m~ML)))
-ml_panels <- create_panel_pair(data, "IGL_normalized", # deck ML = dataset IGL_normalized (flat)
+ml_panels <- create_panel_pair(data, "ML_normalized", # 2026-09-10: July swap removed — manuscript Fig 3 uses the dataset column names (ML panel = ML_normalized)
  expression(ML~surface~area~(mu*m^2/mu*m~ML)))
-igl_panels <- create_panel_pair(data, "ML_normalized", # deck IGL = dataset ML_normalized (strong growth)
+igl_panels <- create_panel_pair(data, "IGL_normalized", # 2026-09-10: IGL panel = IGL_normalized
  expression(IGL~surface~area~(mu*m^2/mu*m~ML)))
 pc_panels <- create_panel_pair(data, "PC_count",
  expression(PC~Density~(PCs/mm~ML)))
