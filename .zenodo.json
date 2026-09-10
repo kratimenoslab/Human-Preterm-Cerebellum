@@ -1,0 +1,49 @@
+{
+  "title": "Human-Preterm-Cerebellum: analysis code for \"Intrinsic Gestational Timing Governs Human Cerebellar Development After Preterm Birth\"",
+  "description": "Analysis code for the manuscript \"Intrinsic Gestational Timing Governs Human Cerebellar Development After Preterm Birth\" (Sanidas, Simonti et al.). Includes the CoGAPS, Tricycle, LinearModel and LDSC analysis pipelines plus per-figure and per-table reproduction code (figures/, tables/) with rendered HTML reports and PDF panels. Subject-level data are provided with the article as Data S1 to S5.",
+  "upload_type": "software",
+  "license": "MIT",
+  "access_right": "open",
+  "language": "eng",
+  "keywords": [
+    "preterm birth",
+    "cerebellum",
+    "human brain development",
+    "spatial transcriptomics",
+    "CoGAPS",
+    "deep learning histopathology",
+    "neonatal MRI",
+    "cranial ultrasound",
+    "LD score regression"
+  ],
+  "creators": [
+    {"name": "Sanidas, Georgios", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Simonti, Gabriele", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Ghaemmaghami, Javid", "affiliation": "Department of Computational Medicine & Bioinformatics, University of Michigan, Ann Arbor, MI, USA"},
+    {"name": "Woyshner, Kyla", "affiliation": "Johns Hopkins University School of Medicine, Baltimore, MD, USA"},
+    {"name": "Polyviou, Antonis", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Vidva, Robinson", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Lowe, Courtney", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Vij, Abhya", "affiliation": "Children's Hospital of Philadelphia, University of Pennsylvania School of Medicine, Philadelphia, PA, USA"},
+    {"name": "Bittel, Daniel", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Triantafyllou, Maria", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Wolff, Nora", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Cardenas, Rodolfo", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Chen, Helen", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Almeida, Francisco", "affiliation": "Life and Health Sciences Research Institute (ICVS); Unidade Local de Saúde de Santo António, Braga, Portugal"},
+    {"name": "Sudhakar, Sniya", "affiliation": "Department of Neuroradiology, Great Ormond Street Hospital NHS Foundation Trust, London, United Kingdom"},
+    {"name": "Mankad, Kshitij", "affiliation": "Department of Neuroradiology, Great Ormond Street Hospital NHS Foundation Trust, London, United Kingdom"},
+    {"name": "Koutroulis, Ioannis", "affiliation": "Center for Neuroscience Research, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"},
+    {"name": "Pettersen, Henrik Sahlin", "affiliation": "Department of Pathology, St. Olavs Hospital, Trondheim University Hospital; NTNU, Norwegian University of Science and Technology, Trondheim, Norway"},
+    {"name": "Stein-O'Brien, Genevieve", "affiliation": "Johns Hopkins University School of Medicine, Baltimore, MD, USA"},
+    {"name": "Sidiropoulos, Dimitrios N.", "affiliation": "Johns Hopkins University School of Medicine, Baltimore, MD, USA"},
+    {"name": "Gallo, Vittorio", "affiliation": "Seattle Children's Research Institute; University of Washington School of Medicine, Seattle, WA, USA"},
+    {"name": "Kratimenos, Panagiotis", "affiliation": "Center for Neuroscience Research and Department of Neonatology, Children's National Hospital; The George Washington University School of Medicine and Health Sciences, Washington, DC, USA"}
+  ],
+  "contributors": [
+    {"name": "Hutchinson, John N.", "affiliation": "Diamond Age Data Science", "type": "Other"}
+  ],
+  "related_identifiers": [
+    {"identifier": "https://github.com/kratimenoslab/Human-Preterm-Cerebellum", "relation": "isSupplementTo", "scheme": "url"}
+  ]
+}

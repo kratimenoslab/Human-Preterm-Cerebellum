@@ -39,3 +39,10 @@ Per-figure and per-table reproduction code for the manuscript, with rendered rep
 These read the de-identified source data published with the article as Supplementary Data S1 to S5
 (resolved through relative `Supplementary_Datasets/` paths; see `figures/README.md`). The mapping from each figure/table to the analysis folders above is given in
 [`figures/README.md`](figures/README.md) and [`tables/README.md`](tables/README.md).
+
+## Citation and archive
+
+The code is archived on Zenodo; the concept DOI [10.5281/zenodo.21829813](https://doi.org/10.5281/zenodo.21829813)
+always resolves to the latest released version (v1.0.0 = 10.5281/zenodo.21829814). Please cite the manuscript
+(Sanidas, Simonti *et al.*, *Intrinsic Gestational Timing Governs Human Cerebellar Development After Preterm Birth*)
+together with the archived release; author metadata for releases is taken from `.zenodo.json` / `CITATION.cff`.

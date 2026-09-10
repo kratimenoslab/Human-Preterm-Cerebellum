@@ -1,0 +1,62 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the manuscript and the archived software release."
+type: software
+title: "Human-Preterm-Cerebellum: analysis code for \"Intrinsic Gestational Timing Governs Human Cerebellar Development After Preterm Birth\""
+license: MIT
+repository-code: "https://github.com/kratimenoslab/Human-Preterm-Cerebellum"
+doi: 10.5281/zenodo.21829813
+authors:
+  - family-names: Sanidas
+    given-names: Georgios
+  - family-names: Simonti
+    given-names: Gabriele
+  - family-names: Ghaemmaghami
+    given-names: Javid
+  - family-names: Woyshner
+    given-names: Kyla
+  - family-names: Polyviou
+    given-names: Antonis
+  - family-names: Vidva
+    given-names: Robinson
+  - family-names: Lowe
+    given-names: Courtney
+  - family-names: Vij
+    given-names: Abhya
+  - family-names: Bittel
+    given-names: Daniel
+  - family-names: Triantafyllou
+    given-names: Maria
+  - family-names: Wolff
+    given-names: Nora
+  - family-names: Cardenas
+    given-names: Rodolfo
+  - family-names: Chen
+    given-names: Helen
+  - family-names: Almeida
+    given-names: Francisco
+  - family-names: Sudhakar
+    given-names: Sniya
+  - family-names: Mankad
+    given-names: Kshitij
+  - family-names: Koutroulis
+    given-names: Ioannis
+  - family-names: Pettersen
+    given-names: Henrik Sahlin
+  - family-names: Stein-O'Brien
+    given-names: Genevieve
+  - family-names: Sidiropoulos
+    given-names: Dimitrios N.
+  - family-names: Gallo
+    given-names: Vittorio
+  - family-names: Kratimenos
+    given-names: Panagiotis
+preferred-citation:
+  type: article
+  title: "Intrinsic Gestational Timing Governs Human Cerebellar Development After Preterm Birth"
+  authors:
+    - family-names: Sanidas
+      given-names: Georgios
+    - family-names: Simonti
+      given-names: Gabriele
+    - name: "et al."
+  year: 2026
